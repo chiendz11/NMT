@@ -1,8 +1,8 @@
 {
-  "train_src_data": "/workspace/khoai23/opennmt/data/iwslt_en_vi/train.en",
-  "train_trg_data": "/workspace/khoai23/opennmt/data/iwslt_en_vi/train.vi",
-  "valid_src_data": "/workspace/khoai23/opennmt/data/iwslt_en_vi/tst2013.en",
-  "valid_trg_data": "/workspace/khoai23/opennmt/data/iwslt_en_vi/tst2013.vi",
+  "train_src_data": "/workspace/khoai23/opennmt/data/Medical/train.en",
+  "train_trg_data": "/workspace/khoai23/opennmt/data/Medical/train.vi",
+  "valid_src_data": "/workspace/khoai23/opennmt/data/Medical/tst2013.en",
+  "valid_trg_data": "/workspace/khoai23/opennmt/data/Medical/tst2013.vi",
   "src_lang": "en",
   "trg_lang": "en",
   "max_strlen": 160,

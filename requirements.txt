@@ -1,8 +1,8 @@
-torch
+torch==2.1.0
 nltk
 torchtext==0.6.0
 pyvi
 spacy
-PyYAML==5.4.1
+PyYAML==6.0.3
 dill
 pandas
