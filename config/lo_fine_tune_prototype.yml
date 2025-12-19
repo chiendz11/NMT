@@ -1,0 +1,61 @@
+# ==============================================================================
+# FINE-TUNE CONFIGURATION (CHO GIAI ĐOẠN 2 - ALT/BÁO CHÍ)
+# GPU: 8GB VRAM | Mục tiêu: Tinh chỉnh chính xác, tăng BLEU score
+# ==============================================================================
+
+# 1. DATASET (QUAN TRỌNG: TRỎ VỀ DỮ LIỆU SẠCH/ALT)
+data:
+  # Hãy đổi đường dẫn này trỏ về thư mục chứa dữ liệu ALT/Báo chí của bạn
+  train_data_location: data/ALT_Laos/train_alt  
+  eval_data_location: data/ALT_Laos/dev_alt     
+  
+  src_lang: .bpe.lo 
+  trg_lang: .bpe.vi 
+
+# 2. LOAD PRE-TRAINED MODEL (BẮT BUỘC)
+# Thay 'model_epoch_27.pt' bằng tên file model tốt nhất bạn đã chọn từ giai đoạn 1
+load_model: './models/vlsp2023_lo_re-transformer/model_30.pkl'
+
+# 3. MODEL ARCHITECTURE (PHẢI GIỮ NGUYÊN 100% SO VỚI GIAI ĐOẠN 1)
+d_model: 512      
+n_layers: 6
+heads: 8
+d_ff: 2048
+dropout: 0.3      # [TĂNG NHẸ] Tăng từ 0.2 lên 0.3 vì dữ liệu ALT thường ít hơn (20k-100k câu).
+                  # Dropout cao hơn giúp tránh overfitting trên tập dữ liệu nhỏ.
+
+# 4. TRAINING CONFIG (OPTIMIZED CHO 8GB VRAM)
+batch_size: 16       # Giữ mức an toàn tuyệt đối cho VRAM
+accum_count: 16     # Tương đương batch_size 128 (8*16), giúp gradient ổn định
+eval_batch_size: 8  
+
+# 5. OPTIMIZER (TINH CHỈNH CHO FINE-TUNING)
+lr: 0.0001          # Tăng lên để model học nhanh hơn
+                    # Tốc độ học cực chậm để "nắn" trọng số nhẹ nhàng, không phá vỡ kiến thức cũ.
+optimizer: Adam
+optimizer_params:
+  betas: [0.9, 0.98]
+  eps: !!float 1e-9
+n_warmup_steps: 100   # Tắt warmup
+label_smoothing: 0.05
+
+# 6. QUẢN LÝ QUÁ TRÌNH TRAIN
+epochs: 15                   # Chỉ cần train thêm 10 epoch là đủ
+printevery: 50               # In log thường xuyên hơn vì dataset nhỏ
+save_checkpoint_epochs: 1    
+maximum_saved_model_eval: 5
+maximum_saved_model_train: 5
+train_max_length: 100
+
+# 7. KHÁC
+log_file_models: 'model_lo_finetune.log' # Ghi ra file log riêng để dễ so sánh
+device: cuda
+lowercase: false
+
+# 8. INFERENCE
+decode_strategy: BeamSearch
+decode_strategy_kwargs:
+  beam_size: 5          # Khi Fine-tune nên để Beam 5 để nhìn thấy BLEU chuẩn xác nhất (chậm chút cũng được)
+  length_normalize: 0.6
+input_max_length: 100
+max_length: 100

@@ -2,15 +2,26 @@ import torch.nn as nn
 from torchtext import data
 import copy
 import layers as layers
-import torch
 
-# =============================================================================
-# CÁC LỚP GỐC (DÙNG CHO TRANSFORMER THƯỜNG)
-# =============================================================================
+#class Embedder(nn.Module):
+#    def __init__(self, vocab_size, d_model):
+#        super().__init__()
+#        self.vocab_size = vocab_size
+#        self.d_model = d_model
+#        
+#        self.embed = nn.Embedding(vocab_size, d_model)
+#        
+#    def forward(self, x):
+#        return self.embed(x)
 
 class EncoderLayer(nn.Module):
     def __init__(self, d_model, heads, dropout=0.1):
-        """An layer of the encoder. Contain a self-attention accepting padding mask"""
+        """An layer of the encoder. Contain a self-attention accepting padding mask
+        Args:
+            d_model: the inner dimension size of the layer
+            heads: number of heads used in the attention
+            dropout: applied dropout value during training
+            """
         super().__init__()
         self.norm_1 = layers.Norm(d_model)
         self.norm_2 = layers.Norm(d_model)
@@ -20,7 +31,16 @@ class EncoderLayer(nn.Module):
         self.dropout_2 = nn.Dropout(dropout)
 
     def forward(self, x, src_mask):
+        """Run the encoding layer
+        Args:
+            x: the input (either embedding values or previous layer output), should be in shape [batch_size, src_len, d_model]
+            src_mask: the padding mask, should be [batch_size, 1, src_len]
+        Return:
+            an output that have the same shape as input, [batch_size, src_len, d_model]
+            the attention used [batch_size, src_len, src_len]
+        """
         x2 = self.norm_1(x)
+        # Self attention only
         x_sa, sa = self.attn(x2, x2, x2, src_mask)
         x = x + self.dropout_1(x_sa)
         x2 = self.norm_2(x)
@@ -29,7 +49,12 @@ class EncoderLayer(nn.Module):
 
 class DecoderLayer(nn.Module):
     def __init__(self, d_model, heads, dropout=0.1):
-        """An layer of the decoder."""
+        """An layer of the decoder. Contain a self-attention that accept no-peeking mask and a normal attention tha t accept padding mask
+        Args:
+            d_model: the inner dimension size of the layer
+            heads: number of heads used in the attention
+            dropout: applied dropout value during training
+            """
         super().__init__()
         self.norm_1 = layers.Norm(d_model)
         self.norm_2 = layers.Norm(d_model)
@@ -44,10 +69,22 @@ class DecoderLayer(nn.Module):
         self.ff = layers.FeedForward(d_model, dropout=dropout)
 
     def forward(self, x, memory, src_mask, trg_mask):
+        """Run the decoding layer
+        Args:
+            x: the input (either embedding values or previous layer output), should be in shape [batch_size, tgt_len, d_model]
+            memory: the outputs of the encoding section, used for normal attention. [batch_size, src_len, d_model]
+            src_mask: the padding mask for the memory, [batch_size, 1, src_len]
+            tgt_mask: the no-peeking mask for the decoder, [batch_size, tgt_len, tgt_len]
+        Return:
+            an output that have the same shape as input, [batch_size, tgt_len, d_model]
+            the self-attention and normal attention received [batch_size, head, tgt_len, tgt_len] & [batch_size, head, tgt_len, src_len]
+        """
         x2 = self.norm_1(x)
+        # Self-attention
         x_sa, sa = self.attn_1(x2, x2, x2, trg_mask)
         x = x + self.dropout_1(x_sa)
         x2 = self.norm_2(x)
+        # Normal multi-head attention
         x_na, na = self.attn_2(x2, memory, memory, src_mask)
         x = x + self.dropout_2(x_na)
         x2 = self.norm_3(x)
@@ -56,12 +93,22 @@ class DecoderLayer(nn.Module):
 
 def get_clones(module, N, keep_module=True):
     if(keep_module and N >= 1):
+        # create N-1 copies in addition to the original
         return nn.ModuleList([module] + [copy.deepcopy(module) for i in range(N-1)]) 
     else:
+        # create N new copy
         return nn.ModuleList([copy.deepcopy(module) for i in range(N)])
 
 class Encoder(nn.Module):
-    """Standard Encoder with Absolute Positional Encoding"""
+    """A wrapper that embed, positional encode, and self-attention encode the inputs.
+    Args:
+        vocab_size: the size of the vocab. Used for embedding
+        d_model: the inner dim of the module
+        N: number of layers used
+        heads: number of heads used in the attention
+        dropout: applied dropout value during training
+        max_seq_length: the maximum length value used for this encoder. Needed for PositionalEncoder, due to caching
+    """
     def __init__(self, vocab_size, d_model, N, heads, dropout, max_seq_length=200):
         super().__init__()
         self.N = N
@@ -69,13 +116,23 @@ class Encoder(nn.Module):
         self.pe = layers.PositionalEncoder(d_model, dropout=dropout, max_seq_length=max_seq_length)
         self.layers = get_clones(EncoderLayer(d_model, heads, dropout), N)
         self.norm = layers.Norm(d_model)
+
         self._max_seq_length = max_seq_length
 
     def forward(self, src, src_mask, output_attention=False, seq_length_check=False):
+        """Accepts a batch of indexed tokens, return the encoded values.
+        Args:
+            src: int Tensor of [batch_size, src_len]
+            src_mask: the padding mask, [batch_size, 1, src_len]
+            output_attention: if set, output a list containing used attention
+            seq_length_check: if set, automatically trim the input if it goes past the expected sequence length.
+        Returns:
+            the encoded values [batch_size, src_len, d_model]
+            if available, list of N (self-attention) calculated. They are in form of [batch_size, heads, src_len, src_len]
+        """
         if(seq_length_check and src.shape[1] > self._max_seq_length):
             src = src[:, :self._max_seq_length]
             src_mask = src_mask[:, :, :self._max_seq_length]
-        
         x = self.embed(src)
         x = self.pe(x)
         attentions = [None] * self.N
@@ -86,7 +143,15 @@ class Encoder(nn.Module):
         return x if(not output_attention) else (x, attentions)
 
 class Decoder(nn.Module):
-    """Standard Decoder with Absolute Positional Encoding"""
+    """A wrapper that receive the encoder outputs, run through the decoder process for a determined input
+    Args:
+        vocab_size: the size of the vocab. Used for embedding
+        d_model: the inner dim of the module
+        N: number of layers used
+        heads: number of heads used in the attention
+        dropout: applied dropout value during training
+        max_seq_length: the maximum length value used for this encoder. Needed for PositionalEncoder, due to caching
+    """
     def __init__(self, vocab_size, d_model, N, heads, dropout, max_seq_length=200):
         super().__init__()
         self.N = N
@@ -94,139 +159,23 @@ class Decoder(nn.Module):
         self.pe = layers.PositionalEncoder(d_model, dropout=dropout, max_seq_length=max_seq_length)
         self.layers = get_clones(DecoderLayer(d_model, heads, dropout), N)
         self.norm = layers.Norm(d_model)
+
         self._max_seq_length = max_seq_length
 
-    def forward(self, trg, memory, src_mask, trg_mask, output_attention=False, seq_length_check=False):
-        if(seq_length_check and trg.shape[1] > self._max_seq_length):
-            trg = trg[:, :self._max_seq_length]
-            trg_mask = trg_mask[:, :self._max_seq_length, :self._max_seq_length]
-
+    def forward(self, trg, memory, src_mask, trg_mask, output_attention=False):
+        """Accepts a batch of indexed tokens and the encoding outputs, return the decoded values.
+        Args:
+            trg: input Tensor of [batch_size, trg_len]
+            memory: output of Encoder [batch_size, src_len, d_model]
+            src_mask: the padding mask, [batch_size, 1, src_len]
+            trg_mask: the no-peeking mask, [batch_size, tgt_len, tgt_len]
+            output_attention: if set, output a list containing used attention
+        Returns:
+            the decoded values [batch_size, tgt_len, d_model]
+            if available, list of N (self-attention, attention) calculated. They are in form of [batch_size, heads, tgt_len, tgt/src_len]
+        """
         x = self.embed(trg)
         x = self.pe(x)
-
-        attentions = [None] * self.N
-        for i in range(self.N):
-            x, attn = self.layers[i](x, memory, src_mask, trg_mask)
-            attentions[i] = attn
-        x = self.norm(x)
-        return x if(not output_attention) else (x, attentions)
-
-
-# =============================================================================
-# CÁC LỚP MỚI CHO RE-TRANSFORMER (SỬ DỤNG RELATIVE POSITIONAL ENCODING)
-# =============================================================================
-
-class ReEncoderLayer(nn.Module):
-    """Encoder Layer sử dụng RelativeMultiHeadAttention"""
-    def __init__(self, d_model, heads, dropout=0.1):
-        super().__init__()
-        self.norm_1 = layers.Norm(d_model)
-        self.norm_2 = layers.Norm(d_model)
-        
-        # SỬ DỤNG RELATIVE ATTENTION (Cần đảm bảo layers.py đã có class này)
-        if hasattr(layers, 'RelativeMultiHeadAttention'):
-            self.attn = layers.RelativeMultiHeadAttention(heads, d_model, dropout=dropout)
-        else:
-            # Fallback nếu chưa update layers.py (sẽ cảnh báo hoặc gây lỗi logic)
-            print("WARNING: RelativeMultiHeadAttention not found in layers.py. Using standard Attention.")
-            self.attn = layers.MultiHeadAttention(heads, d_model, dropout=dropout)
-            
-        self.ff = layers.FeedForward(d_model, dropout=dropout)
-        self.dropout_1 = nn.Dropout(dropout)
-        self.dropout_2 = nn.Dropout(dropout)
-
-    def forward(self, x, src_mask):
-        x2 = self.norm_1(x)
-        x_sa, sa = self.attn(x2, x2, x2, src_mask)
-        x = x + self.dropout_1(x_sa)
-        x2 = self.norm_2(x)
-        x = x + self.dropout_2(self.ff(x2))
-        return x, sa
-
-class ReDecoderLayer(nn.Module):
-    """Decoder Layer sử dụng RelativeMultiHeadAttention cho Self-Attention"""
-    def __init__(self, d_model, heads, dropout=0.1):
-        super().__init__()
-        self.norm_1 = layers.Norm(d_model)
-        self.norm_2 = layers.Norm(d_model)
-        self.norm_3 = layers.Norm(d_model)
-
-        self.dropout_1 = nn.Dropout(dropout)
-        self.dropout_2 = nn.Dropout(dropout)
-        self.dropout_3 = nn.Dropout(dropout)
-
-        # Self-Attention: Dùng Relative
-        if hasattr(layers, 'RelativeMultiHeadAttention'):
-            self.attn_1 = layers.RelativeMultiHeadAttention(heads, d_model, dropout=dropout)
-        else:
-            self.attn_1 = layers.MultiHeadAttention(heads, d_model, dropout=dropout)
-            
-        # Cross-Attention: Vẫn dùng Standard Attention (thường không dùng RPE giữa 2 chuỗi khác nhau)
-        self.attn_2 = layers.MultiHeadAttention(heads, d_model, dropout=dropout)
-        
-        self.ff = layers.FeedForward(d_model, dropout=dropout)
-
-    def forward(self, x, memory, src_mask, trg_mask):
-        x2 = self.norm_1(x)
-        x_sa, sa = self.attn_1(x2, x2, x2, trg_mask)
-        x = x + self.dropout_1(x_sa)
-        x2 = self.norm_2(x)
-        x_na, na = self.attn_2(x2, memory, memory, src_mask)
-        x = x + self.dropout_2(x_na)
-        x2 = self.norm_3(x)
-        x = x + self.dropout_3(self.ff(x2))
-        return x, (sa, na)
-
-class ReEncoder(nn.Module):
-    """Re-Encoder: Không dùng Absolute PE, Dùng ReEncoderLayer (có RPE)"""
-    def __init__(self, vocab_size, d_model, N, heads, dropout, max_seq_length=200):
-        super().__init__()
-        self.N = N
-        self.embed = nn.Embedding(vocab_size, d_model)
-        # Không có self.pe
-        
-        # Sử dụng ReEncoderLayer thay vì EncoderLayer
-        self.layers = get_clones(ReEncoderLayer(d_model, heads, dropout), N)
-        
-        self.norm = layers.Norm(d_model)
-        self._max_seq_length = max_seq_length
-
-    def forward(self, src, src_mask, output_attention=False, seq_length_check=False):
-        if(seq_length_check and src.shape[1] > self._max_seq_length):
-            src = src[:, :self._max_seq_length]
-            src_mask = src_mask[:, :, :self._max_seq_length]
-
-        x = self.embed(src)
-        # Không cộng PE ở đây
-        
-        attentions = [None] * self.N
-        for i in range(self.N):
-            x, attn = self.layers[i](x, src_mask)
-            attentions[i] = attn
-        x = self.norm(x)
-        return x if(not output_attention) else (x, attentions)
-
-class ReDecoder(nn.Module):
-    """Re-Decoder: Không dùng Absolute PE, Dùng ReDecoderLayer (có RPE)"""
-    def __init__(self, vocab_size, d_model, N, heads, dropout, max_seq_length=200):
-        super().__init__()
-        self.N = N
-        self.embed = nn.Embedding(vocab_size, d_model)
-        # Không có self.pe
-        
-        # Sử dụng ReDecoderLayer thay vì DecoderLayer
-        self.layers = get_clones(ReDecoderLayer(d_model, heads, dropout), N)
-        
-        self.norm = layers.Norm(d_model)
-        self._max_seq_length = max_seq_length
-
-    def forward(self, trg, memory, src_mask, trg_mask, output_attention=False, seq_length_check=False):
-        if(seq_length_check and trg.shape[1] > self._max_seq_length):
-            trg = trg[:, :self._max_seq_length]
-            trg_mask = trg_mask[:, :self._max_seq_length, :self._max_seq_length]
-
-        x = self.embed(trg)
-        # Không cộng PE ở đây
 
         attentions = [None] * self.N
         for i in range(self.N):
@@ -244,25 +193,17 @@ class Config:
             'train_trg_data':'/workspace/khoai23/opennmt/data/iwslt_en_vi/train.vi',
             'valid_src_data':'/workspace/khoai23/opennmt/data/iwslt_en_vi/tst2013.en',
             'valid_trg_data':'/workspace/khoai23/opennmt/data/iwslt_en_vi/tst2013.vi',
-            'src_lang':'en',
-            'trg_lang':'vi',
+            'src_lang':'en', # useless atm
+            'trg_lang':'en',#'vi_spacy_model', # useless atm
             'max_strlen':160,
             'batchsize':1500,
-            'device':'cpu',
-            'd_model':512,
-            'n_layers':6,
-            'heads':8,
-            'dropout':0.1,
+            'device':'cuda',
+            'd_model': 512,
+            'n_layers': 6,
+            'heads': 8,
+            'dropout': 0.1,
             'lr':0.0001,
             'epochs':30,
-            'printevery':200,
+            'printevery': 200,
             'k':5,
-            'n_warmup_steps':4000,
-            'beta1':0.9,
-            'beta2':0.98,
-            'eps':1e-09,
-            'label_smoothing':0.1,
-            'save_checkpoint_epochs':5
         }
-    def get(self, key, default=None):
-        return self.opt.get(key, default)

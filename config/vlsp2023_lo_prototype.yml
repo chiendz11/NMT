@@ -1,56 +1,60 @@
 # ==============================================================================
-# CẤU HÌNH OPTIMIZED CHO GPU 8GB VRAM - DATASET 105K (VLSP)
+# CẤU HÌNH OPTIMIZED CHO GPU 8GB VRAM - DATA 500K CÂU
+# Mục tiêu: Train ổn định, không tràn RAM, Valid siêu tốc
 # ==============================================================================
 
 data:
-  # Đảm bảo đường dẫn đúng tới file đã BPE
-  train_data_location: data/Laos_bpe/train2023
-  eval_data_location: data/Laos_bpe/dev2023
+  # Đường dẫn dữ liệu (Bạn giữ nguyên theo máy bạn)
+  train_data_location: data/Laos_2023/train2023.token
+  eval_data_location: data/Laos_2023/dev2023.token
+
+  # LƯU Ý: Nếu bạn train Khmer thì sửa thành .bpe.km, nếu Lào thì để .bpe.lo
   src_lang: .bpe.lo 
   trg_lang: .bpe.vi 
 
-# 1. MODEL PARAMETERS (Cấu hình Small-Base)
-# Lý do: Với 105k câu, model quá to sẽ học vẹt (overfit).
-# d_model=256 giúp model nhẹ, train nhanh gấp đôi model 512, vừa vặn 8GB VRAM.
-d_model: 256
+# 1. MODEL PARAMETERS (Giữ nguyên cấu hình Base vì đang học rất tốt)
+d_model: 512      # Đủ lớn để hiểu sâu ngữ nghĩa
 n_layers: 6
-heads: 8        # Tăng lên 8 heads để học ngữ cảnh tốt hơn (256/8 = 32 dim/head)
-d_ff: 1024      # Feed-forward network
-dropout: 0.3  # Giữ 0.3 để tránh overfit với dữ liệu ít
+heads: 8
+d_ff: 2048
+dropout: 0.2      # Mức 0.2 là chuẩn cho 500k câu, tránh học vẹt
 
-# 2. TRAINING CONFIG (QUAN TRỌNG NHẤT CHO 8GB VRAM)
-# Batch size 32 là mức an toàn cho 8GB với cấu hình model trên.
-# Nếu bị lỗi OOM (hết bộ nhớ), hãy giảm xuống 16.
-batch_size: 32 
-accum_count: 4
-eval_batch_size: 8
+# 2. TRAINING CONFIG (THAY ĐỔI QUAN TRỌNG ĐỂ CỨU VRAM)
+# ----------------------------------------------------
+batch_size: 16       # [QUAN TRỌNG] Giảm từ 16 xuống 8 để VRAM luôn dưới 7GB, không bao giờ phải mượn RAM hệ thống.
+accum_count: 8    # [QUAN TRỌNG] Tăng từ 8 lên 16. 
+                    # Giải thích: 8 (batch) * 16 (tích lũy) = 128 mẫu/lần cập nhật -> Học vẫn "đầm" và chắc chắn.
+eval_batch_size: 8  # Giữ nhỏ để an toàn
 
 # 3. OPTIMIZER
-# Với d_model 256, Learning rate nên cao hơn một chút để hội tụ nhanh
-lr: 2.0             
+lr: 2.0           # Learning rate tiêu chuẩn cho Transformer
 optimizer: Adam
 optimizer_params:
   betas: [0.9, 0.98]
   eps: !!float 1e-9
-n_warmup_steps: 4000
+n_warmup_steps: 8000 
 label_smoothing: 0.1
 
 # 4. QUẢN LÝ QUÁ TRÌNH TRAIN
-epochs: 40                # 105k câu cần khoảng 40-50 epochs để đạt đỉnh
-printevery: 500             # In log mỗi 500 bước
-save_checkpoint_epochs: 1   # Lưu model mỗi 5 epochs (đỡ tốn dung lượng ổ cứng)
+epochs: 30
+printevery: 200
+save_checkpoint_epochs: 1    # Valid mỗi epoch để theo dõi sát sao (vì giờ valid nhanh rồi)
 maximum_saved_model_eval: 5
 maximum_saved_model_train: 5
-train_max_length: 100 
+train_max_length: 100
 
-# 5. CẤU HÌNH KHÁC
-log_file_models: 'model_vlsp_8gb.log'
-device: cuda           # Cố định hạt giống để kết quả tái lập được
+# 5. KHÁC
+log_file_models: 'model_base_optimized.log'
+device: cuda
+lowercase: false
 
-# 6. INFERENCE (DỊCH THỬ)
+# 6. INFERENCE (BÍ KÍP TĂNG TỐC ĐỘ VALIDATION)
+# ----------------------------------------------------
 decode_strategy: BeamSearch
 decode_strategy_kwargs:
-  beam_size: 5 
-  length_normalize: 0.6 
+  beam_size: 1          # [QUAN TRỌNG] Chuyển thành 1 (Greedy Search).
+                        # Tác dụng: Giảm thời gian Valid từ 40 phút xuống còn ~3-5 phút.
+                        # Tuy BLEU hiển thị sẽ thấp hơn thực tế một chút, nhưng vẫn đủ để biết model khôn lên hay ngu đi.
+  length_normalize: 0.6
 input_max_length: 100
 max_length: 100

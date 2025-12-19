@@ -1,44 +1,54 @@
+# ==============================================================================
+# CẤU HÌNH CHO DATA TRUNG BÌNH (500K CÂU) TRÊN GPU 8GB VRAM
+# ==============================================================================
 
-# data location and config section
 data:
-  train_data_location: data/ALT/train
-  eval_data_location:  data/ALT/test
-  src_lang: .bpe.zh
-  trg_lang: .bpe.vi
-log_file_models: 'model.log'
-lowercase: false
-build_vocab_kwargs: # additional arguments for build_vocab. See torchtext.vocab.Vocab for mode details
-#  max_size: 50000
-  min_freq: 5
-# model parameters section
-device: cuda
-d_model: 512
+  # Sửa lại đường dẫn cho đúng với folder chứa data Trung - Việt
+  train_data_location: data/Chinese/train
+  eval_data_location: data/Chinese/dev
+  src_lang: .bpe.zh  # Đuôi file nguồn (Tiếng Trung)
+  trg_lang: .bpe.vi  # Đuôi file đích (Tiếng Việt)
+
+# 1. MODEL PARAMETERS (Nâng lên cấu hình BASE)
+# Lý do: 500k câu đủ sức train model chuẩn (512). Model 256 sẽ không tận dụng hết dữ liệu.
+d_model: 512      # Nâng từ 256 -> 512 (Chuẩn quốc tế)
 n_layers: 6
-heads: 8
-# inference section
-eval_batch_size: 8
-decode_strategy: BeamSearch
-decode_strategy_kwargs:
-  beam_size: 5 # beam search size
-  length_normalize: 0.6 # recalculate beam position by length. Currently only work in default BeamSearch
-input_max_length: 200 # input longer than this value will be trimmed in inference. Note that this values are to be used during cached PE, hence, validation set with more than this much tokens will call a warning for the trimming.
-max_length: 160 # only perform up to this much timestep during inference
-train_max_length: 50 # training samples with this much length in src/trg will be discarded
-# optimizer and learning arguments section
-lr: 0.2
-optimizer: AdaBelief
+heads: 8          # 512 / 8 = 64 (Kích thước chuẩn mỗi head)
+d_ff: 2048        # Nâng từ 1024 -> 2048 để tăng khả năng tư duy của model
+dropout: 0.2      # Giảm từ 0.3 -> 0.2 (Vì data nhiều hơn nên giảm dropout để học nhanh hơn)
+
+# 2. TRAINING CONFIG (BÍ KÍP CHO 8GB VRAM)
+# Vì model to hơn (512), nên ta phải giảm batch_size xuống để không hết RAM.
+# Nhưng ta tăng accum_count lên để tổng lượng học vẫn đủ lớn.
+batch_size: 16         # Giảm từ 32 -> 16 (An toàn cho 8GB VRAM)
+accum_count: 8         # Tăng từ 4 -> 8 (Tương đương học 128 câu một lúc)
+eval_batch_size: 8     # Giữ nhỏ để khi chạy kiểm tra không bị crash
+
+# 3. OPTIMIZER
+lr: 2.0             
+optimizer: Adam
 optimizer_params:
-  betas:
-    - 0.9 # beta1
-    - 0.98 # beta2
+  betas: [0.9, 0.98]
   eps: !!float 1e-9
-n_warmup_steps: 4000
+n_warmup_steps: 8000   # Tăng warmup lên 8000 để model to khởi động êm hơn
 label_smoothing: 0.1
-dropout: 0.1
-# training config, evaluation, save & load section
-batch_size: 128
-epochs: 20
-printevery: 200
+
+# 4. QUẢN LÝ QUÁ TRÌNH TRAIN
+epochs: 30             # Data lớn hơn nên số vòng lặp (epoch) giảm xuống là đủ
+printevery: 100        # In log thường xuyên hơn để theo dõi
 save_checkpoint_epochs: 1
 maximum_saved_model_eval: 5
 maximum_saved_model_train: 5
+train_max_length: 100
+
+# 5. KHÁC
+log_file_models: 'model_zh_base_8gb.log'
+device: cuda
+
+# 6. INFERENCE
+decode_strategy: BeamSearch
+decode_strategy_kwargs:
+  beam_size: 5
+  length_normalize: 0.6
+input_max_length: 100
+max_length: 100
