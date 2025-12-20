@@ -1,54 +1,54 @@
 # ==============================================================================
-# CẤU HÌNH CHO DATA TRUNG BÌNH (500K CÂU) TRÊN GPU 8GB VRAM
+# CONFIG TỐI ƯU CHO OPENSUBTITLES (ZH-VI) - 500K CÂU
 # ==============================================================================
 
 data:
-  # Sửa lại đường dẫn cho đúng với folder chứa data Trung - Việt
   train_data_location: data/Chinese/train
   eval_data_location: data/Chinese/dev
-  src_lang: .bpe.zh  # Đuôi file nguồn (Tiếng Trung)
-  trg_lang: .bpe.vi  # Đuôi file đích (Tiếng Việt)
+  src_lang: .bpe.zh
+  trg_lang: .bpe.vi
 
-# 1. MODEL PARAMETERS (Nâng lên cấu hình BASE)
-# Lý do: 500k câu đủ sức train model chuẩn (512). Model 256 sẽ không tận dụng hết dữ liệu.
-d_model: 512      # Nâng từ 256 -> 512 (Chuẩn quốc tế)
+# 1. MODEL (BASE)
+d_model: 512
 n_layers: 6
-heads: 8          # 512 / 8 = 64 (Kích thước chuẩn mỗi head)
-d_ff: 2048        # Nâng từ 1024 -> 2048 để tăng khả năng tư duy của model
-dropout: 0.2      # Giảm từ 0.3 -> 0.2 (Vì data nhiều hơn nên giảm dropout để học nhanh hơn)
+heads: 8
+d_ff: 2048
+dropout: 0.3      # Subtitle rất nhiễu, giữ dropout 0.3 là chuẩn
 
-# 2. TRAINING CONFIG (BÍ KÍP CHO 8GB VRAM)
-# Vì model to hơn (512), nên ta phải giảm batch_size xuống để không hết RAM.
-# Nhưng ta tăng accum_count lên để tổng lượng học vẫn đủ lớn.
-batch_size: 16         # Giảm từ 32 -> 16 (An toàn cho 8GB VRAM)
-accum_count: 8         # Tăng từ 4 -> 8 (Tương đương học 128 câu một lúc)
-eval_batch_size: 8     # Giữ nhỏ để khi chạy kiểm tra không bị crash
+# 2. TRAINING STRATEGY (TẬN DỤNG CÂU NGẮN)
+# Vì câu chỉ dài trung bình 9 token, ta có thể nhồi Batch cực lớn
+batch_size: 96    # TĂNG LÊN 96 (GPU 8GB chịu tốt vì max_len thấp)
+accum_count: 1    # Giảm accum xuống 1 vì batch 96 đã đủ lớn để học tốt rồi.
+                  # Train sẽ mượt hơn rất nhiều.
+eval_batch_size: 32
 
 # 3. OPTIMIZER
-lr: 2.0             
 optimizer: Adam
 optimizer_params:
   betas: [0.9, 0.98]
   eps: !!float 1e-9
-n_warmup_steps: 8000   # Tăng warmup lên 8000 để model to khởi động êm hơn
+
+lr: 0.0003        # LR chuẩn cho Batch lớn
+n_warmup_steps: 4000 
 label_smoothing: 0.1
 
-# 4. QUẢN LÝ QUÁ TRÌNH TRAIN
-epochs: 30             # Data lớn hơn nên số vòng lặp (epoch) giảm xuống là đủ
-printevery: 100        # In log thường xuyên hơn để theo dõi
+# 4. QUẢN LÝ
+epochs: 30
+printevery: 100
 save_checkpoint_epochs: 1
 maximum_saved_model_eval: 5
 maximum_saved_model_train: 5
-train_max_length: 100
+train_max_length: 40  # CHỐT HẠ: 99% data < 29 tokens. 
+                      # Để 40 là bao trọn vẹn, cắt bỏ phần rác siêu dài (nếu có).
 
 # 5. KHÁC
-log_file_models: 'model_zh_base_8gb.log'
+log_file_models: 'model_zh_vi_base.log'
 device: cuda
 
 # 6. INFERENCE
 decode_strategy: BeamSearch
 decode_strategy_kwargs:
   beam_size: 5
-  length_normalize: 0.6
-input_max_length: 100
-max_length: 100
+  length_normalize: 1.0
+input_max_length: 40    # Khớp với train
+max_length: 40

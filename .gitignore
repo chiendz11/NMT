@@ -1,6 +1,53 @@
-bin/__pycache__
-layers/__pycache__
-models/__pycache__
-modules/__pycache__
-utils/__pycache__
-venv_kc4
+# =====================
+# DATA (RAW & PROCESSED)
+# =====================
+data/
+Vietnamese_Lao/
+OpenSubtitles*
+MultiCCAligned*
+ALT.*
+iwslt_en_vi/
+Zh/
+Khmer/
+Laos_2023/
+
+# =====================
+# PREPROCESS ARTIFACTS
+# =====================
+*.tok.*
+*.bpe.*
+*.token*
+*.concat*
+*.tmp
+
+# =====================
+# TRAINED MODELS
+# =====================
+models/*/
+!models/default.py
+!models/transformer.py
+
+# =====================
+# LOGS & OUTPUTS
+# =====================
+*.log
+predictions/
+web/save_dir/
+
+# =====================
+# PYTHON
+# =====================
+__pycache__/
+*.pyc
+*.pyo
+.env
+.venv_kc4/
+venv_kc4/
+
+# =====================
+# OS & IDE
+# =====================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -4,9 +4,9 @@
 
 data:
   # Thư mục chứa dữ liệu đã chạy BPE
-  train_data_location: data/Khmer/train
-  eval_data_location: data/Khmer/dev
-  
+  train_data_location: data/Khmer/02_final_ready/train
+  eval_data_location: data/Khmer/02_final_ready/dev
+
   # LƯU Ý QUAN TRỌNG: 
   # Hãy kiểm tra file trong thư mục data/Khmer/train xem đuôi là gì.
   # Nếu bạn đã chạy run_bpe_km.py thì đuôi thường là .bpe.km và .bpe.vi

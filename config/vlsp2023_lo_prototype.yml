@@ -1,60 +1,54 @@
 # ==============================================================================
-# CẤU HÌNH OPTIMIZED CHO GPU 8GB VRAM - DATA 500K CÂU
-# Mục tiêu: Train ổn định, không tràn RAM, Valid siêu tốc
+# CONFIG CHO VLSP 2023 (LAO-VIET) - 330K CÂU
 # ==============================================================================
 
 data:
-  # Đường dẫn dữ liệu (Bạn giữ nguyên theo máy bạn)
   train_data_location: data/Laos_2023/train2023.token
   eval_data_location: data/Laos_2023/dev2023.token
+  src_lang: .bpe.lo
+  trg_lang: .bpe.vi
 
-  # LƯU Ý: Nếu bạn train Khmer thì sửa thành .bpe.km, nếu Lào thì để .bpe.lo
-  src_lang: .bpe.lo 
-  trg_lang: .bpe.vi 
-
-# 1. MODEL PARAMETERS (Giữ nguyên cấu hình Base vì đang học rất tốt)
-d_model: 512      # Đủ lớn để hiểu sâu ngữ nghĩa
+# 1. MODEL ARCHITECTURE (TRANSFORMER BASE)
+d_model: 512
 n_layers: 6
 heads: 8
 d_ff: 2048
-dropout: 0.2      # Mức 0.2 là chuẩn cho 500k câu, tránh học vẹt
+dropout: 0.3      # Data trung bình (Medium), dropout 0.3 là chuẩn.
 
-# 2. TRAINING CONFIG (THAY ĐỔI QUAN TRỌNG ĐỂ CỨU VRAM)
-# ----------------------------------------------------
-batch_size: 16       # [QUAN TRỌNG] Giảm từ 16 xuống 8 để VRAM luôn dưới 7GB, không bao giờ phải mượn RAM hệ thống.
-accum_count: 8    # [QUAN TRỌNG] Tăng từ 8 lên 16. 
-                    # Giải thích: 8 (batch) * 16 (tích lũy) = 128 mẫu/lần cập nhật -> Học vẫn "đầm" và chắc chắn.
-eval_batch_size: 8  # Giữ nhỏ để an toàn
+# 2. TRAINING CONFIG
+batch_size: 16    
+accum_count: 8    # Effective batch = 128. Khá tốt cho hội tụ.
+eval_batch_size: 16
 
 # 3. OPTIMIZER
-lr: 2.0           # Learning rate tiêu chuẩn cho Transformer
 optimizer: Adam
 optimizer_params:
   betas: [0.9, 0.98]
   eps: !!float 1e-9
-n_warmup_steps: 8000 
+
+lr: 2.0        
+n_warmup_steps: 4000
 label_smoothing: 0.1
 
-# 4. QUẢN LÝ QUÁ TRÌNH TRAIN
-epochs: 30
-printevery: 200
-save_checkpoint_epochs: 1    # Valid mỗi epoch để theo dõi sát sao (vì giờ valid nhanh rồi)
+# 4. QUẢN LÝ
+epochs: 150       # Set cao lên để Early Stopping tự quyết định (thực tế sẽ dừng tầm 40-60)
+printevery: 100
+save_checkpoint_epochs: 1
 maximum_saved_model_eval: 5
 maximum_saved_model_train: 5
-train_max_length: 100
+train_max_length: 110 
 
-# 5. KHÁC
-log_file_models: 'model_base_optimized.log'
+# 5. EARLY STOPPING
+patience: 10      # Quan trọng: Đợi 10 epoch không cải thiện mới dừng.
+
+# 6. KHÁC
+log_file_models: 'model_vlsp_lo_vi.log'
 device: cuda
-lowercase: false
 
-# 6. INFERENCE (BÍ KÍP TĂNG TỐC ĐỘ VALIDATION)
-# ----------------------------------------------------
+# 7. INFERENCE
 decode_strategy: BeamSearch
 decode_strategy_kwargs:
-  beam_size: 1          # [QUAN TRỌNG] Chuyển thành 1 (Greedy Search).
-                        # Tác dụng: Giảm thời gian Valid từ 40 phút xuống còn ~3-5 phút.
-                        # Tuy BLEU hiển thị sẽ thấp hơn thực tế một chút, nhưng vẫn đủ để biết model khôn lên hay ngu đi.
-  length_normalize: 0.6
-input_max_length: 100
-max_length: 100
+  beam_size: 1    # Beam=1 (Greedy) train nhanh. Khi test thật có thể tăng lên 4-5.
+  length_normalize: 1.0
+input_max_length: 110   
+max_length: 110

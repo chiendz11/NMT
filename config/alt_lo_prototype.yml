@@ -14,12 +14,12 @@ d_model: 256
 n_layers: 2
 heads: 4
 d_ff: 1024
-dropout: 0.3      # TĂNG LÊN 0.3: Dữ liệu ít rất dễ học vẹt (overfit), cần dropout cao hơn
+dropout: 0.3     # TĂNG LÊN 0.3: Dữ liệu ít rất dễ học vẹt (overfit), cần dropout cao hơn
 
 # 3. TRAINING CONFIG (CHIẾN THUẬT QUAN TRỌNG NHẤT)
 # Mục tiêu: Tạo ra Effective Batch Size lớn (~1000 câu) để đường đi ổn định
-batch_size: 64        # Giới hạn vật lý của GPU 8GB
-accum_count: 2       # TĂNG RẤT MẠNH (16 * 64 = 1024 câu/lần cập nhật).
+batch_size: 16        # Giới hạn vật lý của GPU 8GB
+accum_count: 8       # TĂNG RẤT MẠNH (16 * 64 = 1024 câu/lần cập nhật).
                       # Giúp model không bị "say rượu" (in ra dấu phẩy)
 
 eval_batch_size: 8
@@ -30,8 +30,8 @@ optimizer_params:
   betas: [0.9, 0.98]
   eps: !!float 1e-9
 
-lr: 0.0001          # MỨC VỪA PHẢI. 0.0005 là hơi cao với data nhỏ dễ gây nổ gradient
-n_warmup_steps: 500 # KHỞI ĐỘNG CHẬM RÃI.
+lr: 2.0          # MỨC VỪA PHẢI. 0.0005 là hơi cao với data nhỏ dễ gây nổ gradient
+n_warmup_steps: 2000 # KHỞI ĐỘNG CHẬM RÃI.
                       # Giúp model làm quen từ từ, tránh bị sốc nhiệt dẫn đến model collapse
 label_smoothing: 0.1
 
@@ -43,7 +43,7 @@ printevery: 100        # In log thường xuyên hơn
 save_checkpoint_epochs: 1 # Lưu thưa hơn (mỗi 10 epoch lưu 1 lần)
 maximum_saved_model_eval: 5
 maximum_saved_model_train: 5
-train_max_length: 100
+train_max_length: 130
 
 # 6. KHÁC
 log_file_models: 'model_lo_train_alt_fixed.log'
@@ -55,5 +55,5 @@ decode_strategy: BeamSearch
 decode_strategy_kwargs:
   beam_size: 5
   length_normalize: 1.2
-input_max_length: 100
-max_length: 100
+input_max_length: 130
+max_length: 130
