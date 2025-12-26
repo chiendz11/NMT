@@ -4,9 +4,9 @@
 
 # 1. DATASET
 data:
-  train_data_location: data/ALT_Lao/02_final_separate/train
-  eval_data_location: data/ALT_Lao/02_final_separate/dev
-  src_lang: .bpe.lo
+  train_data_location: data/ALT_Khmer/02_final_separate/train
+  eval_data_location: data/ALT_Khmer/02_final_separate/dev
+  src_lang: .bpe.km
   trg_lang: .bpe.vi
 
 # 2. MODEL ARCHITECTURE

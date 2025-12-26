@@ -1,59 +1,66 @@
 # ==============================================================================
-# CẤU HÌNH TRANSFORMER KHMER - VIETNAMESE (OPTIMIZED FOR 500K SENTENCES)
+# CONFIG TỐI ƯU KHMER-VIET (580K CÂU) - 4GB VRAM (FINAL)
+# Target: Effective Batch Size 512 (Chuẩn vàng)
 # ==============================================================================
 
 data:
-  # Thư mục chứa dữ liệu đã chạy BPE
+  # [LƯU Ý] Kiểm tra kỹ đường dẫn file lần cuối
   train_data_location: data/Khmer/02_final_ready/train
   eval_data_location: data/Khmer/02_final_ready/dev
+  src_lang: .bpe.km
+  trg_lang: .bpe.vi
 
-  # LƯU Ý QUAN TRỌNG: 
-  # Hãy kiểm tra file trong thư mục data/Khmer/train xem đuôi là gì.
-  # Nếu bạn đã chạy run_bpe_km.py thì đuôi thường là .bpe.km và .bpe.vi
-  src_lang: .bpe.km 
-  trg_lang: .bpe.vi 
-
-# 1. MODEL PARAMETERS (Cấu hình Base - Chuẩn mực cho 500k câu)
-# Nâng cấp từ 256 lên 512 để đủ sức chứa ngữ nghĩa của 500.000 câu
-d_model: 512
+# 1. MODEL ARCHITECTURE (Transformer Base)
+# Cấu hình tiêu chuẩn, đủ sức mạnh xử lý 580k câu ngữ pháp phức tạp
+d_model: 512          
 n_layers: 6
-heads: 8        # 512 chia hết cho 8 (mỗi head 64 dim)
-d_ff: 2048      # Mạng nơ-ron dày hơn để xử lý ngữ pháp Khmer phức tạp
-dropout: 0.2    # Giảm từ 0.35 xuống 0.2 vì dữ liệu nhiều, ít sợ học vẹt hơn
+heads: 8
+d_ff: 2048            
+dropout: 0.2          # Mức 0.2 giúp cân bằng giữa học nhanh và chống học vẹt
 
-# 2. TRAINING CONFIG (Tối ưu cho 8GB VRAM)
-# Model to hơn nên phải giảm Batch Size để không cháy VRAM
-batch_size: 16      # Mức an toàn cho 8GB với model Base
-accum_count: 16      # Tích lũy 8 lần (Tương đương batch_size thực tế = 128)
-eval_batch_size: 8    # Giữ nhỏ để tránh OOM khi validate
+# 2. TRAINING CONFIG (CHIẾN THUẬT AN TOÀN TUYỆT ĐỐI)
+# VRAM 4GB rất yếu, nên ta chia nhỏ để trị, rồi cộng dồn lại.
+batch_size: 4         # [VẬT LÝ] Chỉ đưa 4 câu vào GPU một lúc -> Không bao giờ OOM.
+accum_count: 128      # [TÍCH LŨY] Cộng dồn kết quả 128 lần mới cập nhật model.
+                      # Công thức: 4 * 128 = 512 (Effective Batch Size).
+                      # Model sẽ học "đầm" và chính xác như khi dùng siêu máy tính.
 
-# 3. OPTIMIZER
-lr: 2.0
-optimizer: Adam       # Dùng Adam chuẩn cho ổn định
+# 3. VALIDATION
+eval_batch_size: 4    # Giữ mức thấp nhất để an toàn khi chạy kiểm thử.
+
+# 4. OPTIMIZER
+optimizer: Adam
 optimizer_params:
   betas: [0.9, 0.98]
   eps: !!float 1e-9
-n_warmup_steps: 4000  # Warmup lâu hơn để model Base hội tụ tốt
+
+lr: 2.0
+n_warmup_steps: 4000  # [ĐIỀU CHỈNH] Giảm từ 8000 xuống 4000.
+                      # Vì Effective Batch lớn (512), 1 epoch chỉ có khoảng 1140 bước.
+                      # Warmup 4000 bước (~3.5 epochs) là vừa đẹp để model nóng máy.
 label_smoothing: 0.1
 
-# 4. QUẢN LÝ QUÁ TRÌNH TRAIN
-epochs: 30            # 500k câu thì 30 epochs là đủ (chạy lâu đấy!)
-printevery: 200    # In log thường xuyên
+# 5. QUẢN LÝ ĐỘ DÀI (BẢO VỆ VRAM)
+# 99% dữ liệu < 89 tokens. Cắt ở 100 là phương án tối ưu nhất.
+train_max_length: 100 
+input_max_length: 100
+max_length: 100       
+
+# 6. LOG & SAVE
+epochs: 50            # [TĂNG] Do số bước cập nhật ít đi, cần chạy nhiều epoch hơn (50).
+printevery: 100       # In log mỗi 100 bước (khoảng 10 lần/epoch) để dễ theo dõi.
 save_checkpoint_epochs: 1
-maximum_saved_model_eval: 5
-maximum_saved_model_train: 5
-train_max_length: 100
+maximum_saved_model_eval: 5   # Lưu 5 model tốt nhất theo điểm BLEU
+maximum_saved_model_train: 5  # Lưu 5 model gần nhất để backup
+patience: 8           # Kiên nhẫn đợi 8 epoch nếu không thấy cải thiện mới dừng.
 
-# 5. KHÁC
-log_file_models: 'model_km_base.log'
+# 7. KHÁC
+log_file_models: 'model_km_vi_580k_final.log'
 device: cuda
-lowercase: false      # Tiếng Khmer không có chữ hoa/thường, nhưng tiếng Việt thì có -> False
+seed: 42
 
-# 6. INFERENCE (DỊCH THỬ)
+# 8. INFERENCE
 decode_strategy: BeamSearch
 decode_strategy_kwargs:
-  beam_size: 5
+  beam_size: 4        # Beam 4 đủ tốt và nhẹ hơn Beam 5.
   length_normalize: 0.6
-  replace_unk: true
-input_max_length: 100
-max_length: 100

@@ -1,0 +1,59 @@
+# ==============================================================================
+# CONFIG CỨU TINH CHO 4GB VRAM (ZH-VI)
+# ==============================================================================
+
+data:
+  train_data_location: data/Zh/02_final_ready/train
+  eval_data_location: data/Zh/02_final_ready/dev
+  src_lang: .bpe.zh
+  trg_lang: .bpe.vi
+
+# 1. MODEL ARCHITECTURE (GIẢM NHẸ ĐỂ TIẾT KIỆM BỘ NHỚ)
+d_model: 512
+n_layers: 6
+heads: 8
+d_ff: 1024            # [QUAN TRỌNG] Giảm từ 2048 xuống 1024. 
+                      # Tiết kiệm ~30% VRAM mà ít ảnh hưởng chất lượng với câu ngắn.
+dropout: 0.1          # Data lớn (10M câu) -> Giảm dropout
+
+# 2. TRAINING CONFIG
+# Chiến thuật: Batch nhỏ + Tích lũy lớn
+batch_size: 32        # Với len 40, 4GB chịu được khoảng 32-40 câu. Để 32 cho an toàn.
+accum_count: 16       # 32 * 16 = 512 (Effective Batch Size chuẩn)
+eval_batch_size: 8   # Bằng train cho an toàn
+
+# 3. OPTIMIZER
+optimizer: Adam
+optimizer_params:
+  betas: [0.9, 0.98]
+  eps: !!float 1e-9
+
+lr: 2.0
+n_warmup_steps: 8000
+label_smoothing: 0.1
+
+# 4. QUẢN LÝ ĐỘ DÀI (CHÌA KHÓA SỐ 2)
+# Thống kê: 99% < 34 tokens.
+# Set 40 là đủ bao phủ 99.5% dữ liệu rồi. Đừng tham 50.
+train_max_length: 40  
+input_max_length: 40
+max_length: 50        # Inference cho phép dài hơn chút
+
+# 5. LOG & SAVE
+epochs: 10            # 10M câu chỉ cần chạy ít epoch
+printevery: 500       # In thường xuyên hơn chút để check xem có bị crash không
+save_checkpoint_epochs: 1
+maximum_saved_model_eval: 3
+maximum_saved_model_train: 1
+patience: 3
+
+# 6. KHÁC
+log_file_models: 'model_zh_vi_4gb.log'
+device: cuda
+seed: 42
+
+# 7. INFERENCE
+decode_strategy: BeamSearch
+decode_strategy_kwargs:
+  beam_size: 4
+  length_normalize: 0.6
