@@ -20,8 +20,8 @@ dropout: 0.3      # Quan trọng: 0.3 giúp chống overfit tốt hơn 0.1 với
 
 # 2. TRAINING CONFIG
 # Effective Batch Size = batch_size * accum_count = 8 * 16 = 128 (Chuẩn mực)
-batch_size: 8     
-accum_count: 16   
+batch_size: 16     
+accum_count: 32   
 eval_batch_size: 16
 
 # 3. OPTIMIZER & SCHEDULER

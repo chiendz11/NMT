@@ -28,7 +28,7 @@ dropout: 0.3      # Giữ 0.3 là hợp lý cho dataset nhỏ như ALT để tr�
 # Chiến thuật: Giảm Batch Size vật lý xuống cực thấp, tăng tích lũy.
 
 batch_size: 4     # [HẠ XUỐNG] Để an toàn tuyệt đối cho VRAM 4GB
-accum_count: 32    # [TĂNG LÊN] 4 * 8 = 32 (Effective Batch Size). 
+accum_count: 8    # [TĂNG LÊN] 4 * 8 = 32 (Effective Batch Size). 
                   # Fine-tune cần batch size vừa phải (32-64) để hội tụ tốt hơn là 128.
 eval_batch_size: 4 # Valid cũng cần nhẹ nhàng
 
@@ -42,7 +42,7 @@ optimizer_params:
 # [QUAN TRỌNG] Learning Rate cho Fine-tune phải thấp hơn Pre-train
 # Pre-train để 2.0, Fine-tune nên giảm xuống để tránh phá vỡ các trọng số đã học được.
 lr: 0.5           # Giảm từ 2.0 -> 0.5
-n_warmup_steps: 2000 # Warmup nhanh hơn một chút
+n_warmup_steps: 500 # Warmup nhanh hơn một chút
 
 label_smoothing: 0.1
 

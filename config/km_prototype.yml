@@ -20,8 +20,8 @@ dropout: 0.2          # Mức 0.2 giúp cân bằng giữa học nhanh và chố
 
 # 2. TRAINING CONFIG (CHIẾN THUẬT AN TOÀN TUYỆT ĐỐI)
 # VRAM 4GB rất yếu, nên ta chia nhỏ để trị, rồi cộng dồn lại.
-batch_size: 4         # [VẬT LÝ] Chỉ đưa 4 câu vào GPU một lúc -> Không bao giờ OOM.
-accum_count: 128      # [TÍCH LŨY] Cộng dồn kết quả 128 lần mới cập nhật model.
+batch_size: 16         # [VẬT LÝ] Chỉ đưa 4 câu vào GPU một lúc -> Không bao giờ OOM.
+accum_count: 32      # [TÍCH LŨY] Cộng dồn kết quả 128 lần mới cập nhật model.
                       # Công thức: 4 * 128 = 512 (Effective Batch Size).
                       # Model sẽ học "đầm" và chính xác như khi dùng siêu máy tính.
 
