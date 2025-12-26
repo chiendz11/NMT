@@ -41,8 +41,8 @@ __pycache__/
 *.pyc
 *.pyo
 .env
-.venv_kc4/
-venv_kc4/
+.venv_nmt/
+venv_nmt/
 
 # =====================
 # OS & IDE

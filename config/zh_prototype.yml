@@ -1,0 +1,61 @@
+# ==============================================================================
+# CONFIG TỐI ƯU: ZH-VI (1M CÂU - DATA NGẮN) - 8GB VRAM
+# ==============================================================================
+
+data:
+  train_data_location: data/Zh/02_final_ready/train
+  eval_data_location: data/Zh/02_final_ready/dev
+  src_lang: .bpe.zh
+  trg_lang: .bpe.vi
+
+# 1. MODEL ARCHITECTURE
+d_model: 512
+n_layers: 6
+heads: 8
+d_ff: 2048
+dropout: 0.2          # Giữ 0.2 để chống học vẹt (vì câu ngắn dễ bị học thuộc lòng).
+
+# 2. TRAINING CONFIG (TĂNG TỐC)
+# Vì câu trung bình chỉ dài 10 tokens, 8GB VRAM dư sức gánh Batch 32 hoặc 48.
+# Ta chọn 32 để vừa nhanh gấp đôi phương án cũ, vừa cực kỳ an toàn.
+batch_size: 16        # [TĂNG TỪ 16 -> 32] Tận dụng GPU tốt hơn.
+accum_count: 32       # [GIẢM TỪ 32 -> 16] 
+                      # Công thức: 32 (batch) * 16 (accum) = 512 (Chuẩn vàng).
+
+# 3. VALIDATION
+eval_batch_size: 8   # Tăng lên 32 luôn, validate cho nhanh.
+
+# 4. OPTIMIZER
+optimizer: Adam
+optimizer_params:
+  betas: [0.9, 0.98]
+  eps: !!float 1e-9
+
+lr: 2.0
+n_warmup_steps: 4000
+label_smoothing: 0.1
+
+# 5. QUẢN LÝ ĐỘ DÀI (QUAN TRỌNG)
+# 99% dữ liệu < 34 tokens. Set 50 là bao trọn vẹn, không sợ mất thông tin.
+train_max_length: 50  
+input_max_length: 50
+max_length: 60        # Inference cho phép dài hơn xíu (để cover 6 câu ngoại lệ kia).
+
+# 6. LOG & SAVE
+epochs: 30            # Với data ngắn, mỗi epoch chạy rất nhanh.
+printevery: 500       
+save_checkpoint_epochs: 1
+maximum_saved_model_eval: 5
+maximum_saved_model_train: 5
+patience: 5
+
+# 7. KHÁC
+log_file_models: 'model_zh_vi_1m_optimized.log'
+device: cuda
+seed: 42
+
+# 8. INFERENCE
+decode_strategy: BeamSearch
+decode_strategy_kwargs:
+  beam_size: 4
+  length_normalize: 0.6

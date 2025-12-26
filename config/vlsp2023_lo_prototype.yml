@@ -1,54 +1,60 @@
 # ==============================================================================
-# CONFIG CHO VLSP 2023 (LAO-VIET) - 330K CÂU
+# CONFIG CHO VLSP (LAO-VIET) - ~315K CÂU
+# Dựa trên thống kê: Src (Lao) 99% < 85 tokens, Trg (Vi) 99% < 126 tokens
 # ==============================================================================
 
 data:
-  train_data_location: data/Laos_2023/train2023.token
-  eval_data_location: data/Laos_2023/dev2023.token
+  # Cập nhật đường dẫn đúng theo log avg_length.py của bạn
+  train_data_location: data/Laos_vlsp/02_final_ready/train
+  eval_data_location: data/Laos_vlsp/02_final_ready/dev
   src_lang: .bpe.lo
   trg_lang: .bpe.vi
 
 # 1. MODEL ARCHITECTURE (TRANSFORMER BASE)
+# Với 300k câu, model Base là giới hạn trên. Không nên dùng Large.
 d_model: 512
 n_layers: 6
 heads: 8
 d_ff: 2048
-dropout: 0.3      # Data trung bình (Medium), dropout 0.3 là chuẩn.
+dropout: 0.3      # Quan trọng: 0.3 giúp chống overfit tốt hơn 0.1 với dữ liệu < 1M câu.
 
 # 2. TRAINING CONFIG
-batch_size: 16    
-accum_count: 8    # Effective batch = 128. Khá tốt cho hội tụ.
+# Effective Batch Size = batch_size * accum_count = 8 * 16 = 128 (Chuẩn mực)
+batch_size: 8     
+accum_count: 16   
 eval_batch_size: 16
 
-# 3. OPTIMIZER
+# 3. OPTIMIZER & SCHEDULER
 optimizer: Adam
 optimizer_params:
   betas: [0.9, 0.98]
   eps: !!float 1e-9
 
-lr: 2.0        
+lr: 2.0         # Learning rate cơ sở cho Noam Scheduler
 n_warmup_steps: 4000
 label_smoothing: 0.1
 
-# 4. QUẢN LÝ
-epochs: 150       # Set cao lên để Early Stopping tự quyết định (thực tế sẽ dừng tầm 40-60)
+# 4. QUẢN LÝ ĐỘ DÀI (QUAN TRỌNG)
+# Update theo thống kê: Tiếng Việt max 99% là 126 tokens -> Set 150 cho an toàn
+train_max_length: 150 
+input_max_length: 150
+max_length: 150       # Dùng cho inference/validation
+
+# 5. QUẢN LÝ LOG & SAVE
+epochs: 100           # Set dư ra, để Early Stopping tự cắt
 printevery: 100
 save_checkpoint_epochs: 1
-maximum_saved_model_eval: 5
-maximum_saved_model_train: 5
-train_max_length: 110 
+maximum_saved_model_eval: 5   # Chỉ giữ 5 model tốt nhất trên tập Dev
+maximum_saved_model_train: 3  # Giữ ít model train thôi cho đỡ tốn ổ cứng
 
-# 5. EARLY STOPPING
-patience: 10      # Quan trọng: Đợi 10 epoch không cải thiện mới dừng.
 
-# 6. KHÁC
+# 7. KHÁC
 log_file_models: 'model_vlsp_lo_vi.log'
 device: cuda
+seed: 42
 
-# 7. INFERENCE
+# 8. INFERENCE / DECODING STRATEGY
 decode_strategy: BeamSearch
 decode_strategy_kwargs:
-  beam_size: 1    # Beam=1 (Greedy) train nhanh. Khi test thật có thể tăng lên 4-5.
-  length_normalize: 1.0
-input_max_length: 110   
-max_length: 110
+  beam_size: 1        # Khi Valid nên để beam > 1 (ví dụ 4) để check chất lượng thật
+  length_normalize: 0.6 # Penalty cho câu dài/ngắn (0.6 - 1.0 là phổ biến)

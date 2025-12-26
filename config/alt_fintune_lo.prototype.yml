@@ -1,0 +1,72 @@
+# ==============================================================================
+# CONFIG FINE-TUNE ALT (LAO-VIET) TỪ CHECKPOINT VLSP
+# GPU: 4GB VRAM | Chế độ: FP16
+# ==============================================================================
+
+data:
+  # Trỏ đến thư mục dataset ALT mới của bạn
+  train_data_location: data/alt_lo_vi/train
+  eval_data_location: data/alt_lo_vi/valid
+  
+  # Quan trọng: Phải dùng chung bộ từ điển (Vocab/BPE) với lúc Pre-train VLSP
+  # Nếu file vocab nằm ở chỗ cũ, hãy trỏ đúng hoặc copy file .vocab/.model sang đây
+  src_lang: .bpe.lo
+  trg_lang: .bpe.vi
+
+# 1. MODEL ARCHITECTURE (BẮT BUỘC GIỮ NGUYÊN TỪ PRE-TRAIN)
+# --------------------------------------------------------
+# Không được sửa các thông số này, nếu không sẽ không load được Checkpoint cũ
+d_model: 512
+n_layers: 6
+heads: 8
+d_ff: 2048
+dropout: 0.3      # Giữ 0.3 là hợp lý cho dataset nhỏ như ALT để tránh Overfit
+
+# 2. TRAINING CONFIG (TỐI ƯU CHO 4GB VRAM)
+# --------------------------------------------------------
+# Model Base (d_model 512) khá nặng cho 4GB VRAM.
+# Chiến thuật: Giảm Batch Size vật lý xuống cực thấp, tăng tích lũy.
+
+batch_size: 4     # [HẠ XUỐNG] Để an toàn tuyệt đối cho VRAM 4GB
+accum_count: 8    # [TĂNG LÊN] 4 * 8 = 32 (Effective Batch Size). 
+                  # Fine-tune cần batch size vừa phải (32-64) để hội tụ tốt hơn là 128.
+eval_batch_size: 4 # Valid cũng cần nhẹ nhàng
+
+# 3. OPTIMIZER & SCHEDULER (FINE-TUNE MODE)
+# --------------------------------------------------------
+optimizer: Adam
+optimizer_params:
+  betas: [0.9, 0.98]
+  eps: !!float 1e-9
+
+# [QUAN TRỌNG] Learning Rate cho Fine-tune phải thấp hơn Pre-train
+# Pre-train để 2.0, Fine-tune nên giảm xuống để tránh phá vỡ các trọng số đã học được.
+lr: 0.5           # Giảm từ 2.0 -> 0.5
+n_warmup_steps: 2000 # Warmup nhanh hơn một chút
+
+label_smoothing: 0.1
+
+# 4. QUẢN LÝ ĐỘ DÀI
+# ALT câu thường ngắn hơn VLSP, giảm xuống để tiết kiệm VRAM
+train_max_length: 100 
+input_max_length: 100
+max_length: 100
+
+# 5. QUẢN LÝ LOG & SAVE
+epochs: 30        # ALT nhỏ nên hội tụ nhanh, tầm 20-30 epoch là đủ
+printevery: 50    # In log thường xuyên hơn vì dataset nhỏ
+save_checkpoint_epochs: 1
+maximum_saved_model_eval: 3
+maximum_saved_model_train: 1 # Không cần giữ nhiều model train làm gì
+
+# 7. KHÁC
+log_file_models: 'model_finetune_alt.log'
+device: cuda
+seed: 42
+fp16: True        # Kích hoạt FP16 (Code mới đã hỗ trợ)
+
+# 8. INFERENCE
+decode_strategy: BeamSearch
+decode_strategy_kwargs:
+  beam_size: 4    # Beam 4 để có kết quả dịch mượt hơn
+  length_normalize: 0.6
