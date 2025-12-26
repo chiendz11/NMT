@@ -47,13 +47,12 @@ def analyze_token_length(file_path, language_name):
 # ==============================================================================
 # ĐIỀN ĐƯỜNG DẪN FILE CỦA BẠN VÀO ĐÂY
 # ==============================================================================
-# 2. Hoặc dùng slash chuẩn /
-src_file = './data/Khmer/02_final_ready/train.bpe.km'
-trg_file = './data/Khmer/02_final_ready/train.bpe.vi'
+src_file = 'data/ALT/02_final_ready/train.bpe.zh'  # File BPE tiếng Khmer
+trg_file = 'data/Zh/02_final_ready/train.bpe.vi'  # File BPE tiếng Việt
 
 print("BẮT ĐẦU PHÂN TÍCH...")
 try:
-    src_lens = analyze_token_length(src_file, "Khmer (SRC)")
+    src_lens = analyze_token_length(src_file, "tiếng Trung (SRC)")
     trg_lens = analyze_token_length(trg_file, "TIẾNG VIỆT (TRG)")
     
     # Vẽ biểu đồ đơn giản nếu chạy trên máy local có màn hình

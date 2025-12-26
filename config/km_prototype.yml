@@ -26,7 +26,7 @@ accum_count: 128      # [TÍCH LŨY] Cộng dồn kết quả 128 lần mới c�
                       # Model sẽ học "đầm" và chính xác như khi dùng siêu máy tính.
 
 # 3. VALIDATION
-eval_batch_size: 4    # Giữ mức thấp nhất để an toàn khi chạy kiểm thử.
+eval_batch_size: 8    # Giữ mức thấp nhất để an toàn khi chạy kiểm thử.
 
 # 4. OPTIMIZER
 optimizer: Adam

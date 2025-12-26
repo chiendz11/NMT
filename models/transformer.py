@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
 import torchtext.data as data
-import copy, time, io
+import copy, time, io, os
 import numpy as np
+import gc # Garbage Collector
 
 from modules.prototypes import Encoder, Decoder, Config as DefaultConfig
 from modules.loader import DefaultLoader, MultiLoader
@@ -17,7 +18,7 @@ from utils.loss import LabelSmoothingLoss
 from utils.metric import bleu, bleu_batch_iter, bleu_single, bleu_batch
 
 # ==============================================================================
-# CLASS EARLY STOPPING
+# CLASS EARLY STOPPING (Giữ nguyên như bạn cung cấp)
 # ==============================================================================
 class EarlyStopping:
     """
@@ -50,12 +51,12 @@ class EarlyStopping:
             self.counter = 0
 
 # ==============================================================================
-# TRANSFORMER MODEL
+# TRANSFORMER MODEL 
+# (FULL OPTIMIZED: Smart Loading + FP16 + Aggressive RAM Cleaning)
 # ==============================================================================
 class Transformer(nn.Module):
     """
     Implementation of Transformer architecture based on the paper Attention is all you need.
-    Updated for 8GB VRAM Optimization Strategy (Cache Clearing enabled).
     """
     def __init__(self, mode=None, model_dir=None, config=None):
         super().__init__()
@@ -112,11 +113,14 @@ class Transformer(nn.Module):
 
         self.to(self.device)
 
+    # --- HÀM LOAD CHECKPOINT LINH HOẠT ---
     def load_checkpoint(self, model_dir, checkpoint=None, checkpoint_idx=0):
         if(checkpoint is not None):
+            # Load trực tiếp từ file (Dùng cho Finetune / Explicit Load)
             saver.load_model(self, checkpoint)
             self._checkpoint_idx = checkpoint_idx
         else:
+            # Tự động tìm trong folder (Dùng cho Resume)
             if model_dir is not None:
                 checkpoint_idx = saver.check_model_in_path(model_dir)
                 if(checkpoint_idx > 0):
@@ -139,29 +143,38 @@ class Transformer(nn.Module):
         else:
             return output
 
-    # --- TRAIN STEP ---
-    def train_step(self, optimizer, batch, criterion, accum_count=1, step=0):
+    # --- TRAIN STEP (FP16 SUPPORT) ---
+    def train_step(self, optimizer, batch, criterion, accum_count=1, step=0, scaler=None):
         self.train()
         opt = self.config
+        device = opt.get('device', const.DEFAULT_DEVICE)
         
-        src = batch.src.transpose(0, 1).to(opt.get('device', const.DEFAULT_DEVICE))
-        trg = batch.trg.transpose(0, 1).to(opt.get('device', const.DEFAULT_DEVICE))
+        src = batch.src.transpose(0, 1).to(device)
+        trg = batch.trg.transpose(0, 1).to(device)
 
         trg_input = trg[:, :-1]
         src_pad = self.SRC.vocab.stoi['<pad>']
         trg_pad = self.TRG.vocab.stoi['<pad>']
         ys = trg[:, 1:].contiguous().view(-1)
 
-        src_mask, trg_mask = create_masks(src, trg_input, src_pad, trg_pad, opt.get('device', const.DEFAULT_DEVICE))
-        preds = self(src, trg_input, src_mask, trg_mask)
+        src_mask, trg_mask = create_masks(src, trg_input, src_pad, trg_pad, device)
         
-        loss = criterion(preds.view(-1, preds.size(-1)), ys)
+        # FP16 Mixed Precision
+        if scaler is not None:
+            with torch.cuda.amp.autocast():
+                preds = self(src, trg_input, src_mask, trg_mask)
+                loss = criterion(preds.view(-1, preds.size(-1)), ys)
+                loss = loss / accum_count
+            
+            scaler.scale(loss).backward()
+        else:
+            # Fallback FP32
+            preds = self(src, trg_input, src_mask, trg_mask)
+            loss = criterion(preds.view(-1, preds.size(-1)), ys)
+            loss = loss / accum_count
+            loss.backward()
         
-        # Normalize Loss theo accum_count
-        loss = loss / accum_count 
-        loss.backward()
-        
-        # Chỉ update trọng số khi đã tích đủ batch
+        # Gradient Accumulation Step
         if (step + 1) % accum_count == 0:
             optimizer.step_and_update_lr()
             optimizer.zero_grad()
@@ -173,14 +186,17 @@ class Transformer(nn.Module):
         opt = self.config
         src_pad = self.SRC.vocab.stoi['<pad>']
         trg_pad = self.TRG.vocab.stoi['<pad>']
+        device = opt.get('device', const.DEFAULT_DEVICE)
+        
+        # Dùng AMP cho Validate để tiết kiệm VRAM
+        use_amp = True if torch.cuda.is_available() else False
     
         with torch.no_grad():
             total_loss = []
             for batch in valid_iter:
-                src = batch.src.transpose(0, 1).to(opt.get('device', const.DEFAULT_DEVICE))
-                trg = batch.trg.transpose(0, 1).to(opt.get('device', const.DEFAULT_DEVICE))
+                src = batch.src.transpose(0, 1).to(device)
+                trg = batch.trg.transpose(0, 1).to(device)
                 
-                # Cắt dữ liệu validation theo max_length để đồng bộ & an toàn bộ nhớ
                 if(maximum_length is not None):
                     src = src[:, :min(src.shape[1], maximum_length[0])]
                     trg = trg[:, :min(trg.shape[1], maximum_length[1])]
@@ -188,13 +204,38 @@ class Transformer(nn.Module):
                 trg_input = trg[:, :-1]
                 ys = trg[:, 1:].contiguous().view(-1)
 
-                src_mask, trg_mask = create_masks(src, trg_input, src_pad, trg_pad, opt.get('device', const.DEFAULT_DEVICE))
-                preds = self(src, trg_input, src_mask, trg_mask)
+                src_mask, trg_mask = create_masks(src, trg_input, src_pad, trg_pad, device)
+                
+                if use_amp:
+                    with torch.cuda.amp.autocast():
+                        preds = self(src, trg_input, src_mask, trg_mask)
+                        loss = criterion(preds.view(-1, preds.size(-1)), ys)
+                else:
+                    preds = self(src, trg_input, src_mask, trg_mask)
+                    loss = criterion(preds.view(-1, preds.size(-1)), ys)
 
-                loss = criterion(preds.view(-1, preds.size(-1)), ys)
                 total_loss.append(loss.item())
     
         return np.mean(total_loss)
+
+    # --- MEMORY MANAGEMENT ---
+    def _get_gpu_memory(self):
+        if torch.cuda.is_available():
+            allocated = torch.cuda.memory_allocated() / 1024 / 1024
+            reserved = torch.cuda.memory_reserved() / 1024 / 1024
+            return allocated, reserved
+        return 0, 0
+
+    def clear_memory(self, logging=None, step_name="Unknown"):
+        if 'cuda' in str(self.config.get('device', 'cpu')) and torch.cuda.is_available():
+            alloc_before, res_before = self._get_gpu_memory()
+            torch.cuda.empty_cache()
+            gc.collect()
+            alloc_after, res_after = self._get_gpu_memory()
+            if logging:
+                logging.info(f" >> [MemClean - {step_name}] Cache Freed: {res_before:.0f}MB -> {res_after:.0f}MB")
+        else:
+            gc.collect()
 
     def translate_sentence(self, sentence, device=None, k=None, max_len=None, debug=False):
         self.eval()
@@ -226,7 +267,7 @@ class Transformer(nn.Module):
         return self.loader.detokenize(translated_batch) if not output_tokens else translated_batch
 
     # ==========================================================================
-    # RUN TRAIN: LOGIC CHÍNH
+    # RUN TRAIN: LOGIC CHÍNH (ĐÃ UPDATE SCALER & SMART LOAD)
     # ==========================================================================
     def run_train(self, model_dir=None, config=None):
         opt = self.config
@@ -239,111 +280,125 @@ class Transformer(nn.Module):
         logging.info("Building model...")
         model = self.to(opt.get('device', const.DEFAULT_DEVICE))
 
-        checkpoint_idx = self._checkpoint_idx
-        if(checkpoint_idx < 0):
-            print("Zero checkpoint detected, reinitialize the model")
+        # ======================================================================
+        # [BEST PRACTICE] LOGIC LOAD CHECKPOINT THÔNG MINH
+        # ======================================================================
+        
+        # BƯỚC 1: Kiểm tra xem đã có checkpoint nào trong folder đang train dở chưa?
+        resume_checkpoint_idx = -1
+        if model_dir is not None:
+            resume_checkpoint_idx = saver.check_model_in_path(model_dir)
+
+        # BƯỚC 2: Ra quyết định (Decision Making)
+        if resume_checkpoint_idx > 0:
+            # CASE 1: RESUME (Ưu tiên cao nhất) - Tiếp tục train từ chỗ ngã
+            logging.info(f">> [System] Found existing checkpoint (Epoch {resume_checkpoint_idx}) in '{model_dir}'.")
+            logging.info(">> [System] RESUMING training... (Ignoring 'load_model' config)")
+            saver.load_model_from_path(self, model_dir, checkpoint_idx=resume_checkpoint_idx)
+            self._checkpoint_idx = resume_checkpoint_idx
+        
+        elif 'load_model' in opt and opt['load_model']:
+            # CASE 2: FINETUNE (Chỉ chạy khi folder output sạch trơn)
+            logging.info(f">> [System] No existing checkpoint found. Found 'load_model' in config.")
+            logging.info(f">> [System] FINETUNING mode. Loading pretrained: {opt['load_model']}")
+            # Load weights từ pretrained file
+            self.load_checkpoint(model_dir=None, checkpoint=opt['load_model'], checkpoint_idx=0)
+            # Quan trọng: Reset Epoch về 0 để Scheduler chạy từ đầu
+            self._checkpoint_idx = 0 
+            logging.info(">> [System] Pretrained loaded. Epoch reset to 0.")
+            
+        else:
+            # CASE 3: TRAIN FROM SCRATCH (Khởi tạo ngẫu nhiên)
+            logging.info(">> [System] NEW TRAINING. Initializing random weights.")
             for p in model.parameters():
                 if p.dim() > 1:
                     nn.init.xavier_uniform_(p)
-            checkpoint_idx = 0
+            self._checkpoint_idx = 0
+
+        checkpoint_idx = self._checkpoint_idx
+        # ======================================================================
 
         best_model_score = saver.load_model_score(model_dir)
         
-        # SETUP OPTIMIZER
+        # FP16 Scaler
+        use_fp16 = True 
+        scaler = torch.cuda.amp.GradScaler() if use_fp16 and torch.cuda.is_available() else None
+        if scaler: logging.info(">> FP16 Mixed Precision Training: ENABLED")
+        else: logging.info(">> FP16 Mixed Precision Training: DISABLED (Using FP32)")
+
+        # Optimizer
         optim_algo = opt["optimizer"]
         lr = opt["lr"]
         d_model = opt["d_model"]
         n_warmup_steps = opt.get("n_warmup_steps", 4000)
         optimizer_params = opt.get("optimizer_params", dict({}))
 
-        if optim_algo not in optimizers:
-            raise ValueError("Unknown optimizer: {}".format(optim_algo))
+        if optim_algo not in optimizers: raise ValueError("Unknown optimizer: {}".format(optim_algo))
         
         optimizer = ScheduledOptim(
                 optimizer=optimizers.get(optim_algo)(model.parameters(), **optimizer_params),
-                init_lr=lr, 
-                d_model=d_model, 
-                n_warmup_steps=n_warmup_steps
+                init_lr=lr, d_model=d_model, n_warmup_steps=n_warmup_steps, scaler=scaler
             )
         
         criterion = LabelSmoothingLoss(len(self.TRG.vocab), padding_idx=trg_pad, smoothing=opt['label_smoothing'])
         
-        # Logging Info
+        # Info Logging
         params_encode = sum([np.prod(p.size()) for p in filter(lambda p: p.requires_grad, self.encoder.parameters())])
         params_decode = sum([np.prod(p.size()) for p in filter(lambda p: p.requires_grad, self.decoder.parameters())])
         logging.info("* Number of parameters: %s"%(params_encode+params_decode))
         logging.info("Starting training on %s"%(opt.get('device', const.DEFAULT_DEVICE)))
         
-        # REPORT CHIẾN THUẬT TRAIN
-        accum_count = opt.get('accum_count', 1)
-        batch_size = opt.get('batch_size', 1) 
-        effective_batch_size = batch_size * accum_count
-        
-        logging.info("------------------------------------------------------")
-        logging.info(" TRAINING STRATEGY REPORT")
-        logging.info(f" * Physical Batch Size : {batch_size}")
-        logging.info(f" * Accumulation Steps  : {accum_count}")
-        logging.info(f" * EFFECTIVE BATCH SIZE: {effective_batch_size}")
-        logging.info(f" * Train Max Length    : {self.train_max_length}")
-        logging.info(f" * Warmup Steps        : {n_warmup_steps}")
-        logging.info("------------------------------------------------------")
-        
-        # Cấu hình Early Stopping
+        # Early Stopping
         patience = opt.get('patience', 10) 
         early_stopping = EarlyStopping(patience=patience, verbose=True)
-        logging.info(f"Early Stopping enabled: patience={patience}")
-
+        
         optimizer.zero_grad()
 
+        # ======================================================================
+        # TRAIN LOOP
+        # ======================================================================
         for epoch in range(checkpoint_idx, opt['epochs']):
             total_loss = 0.0
-            
             s = time.time()
             for i, batch in enumerate(self.train_iter): 
-                # Chạy train step với accumulation
-                loss = self.train_step(optimizer, batch, criterion, accum_count=accum_count, step=i)
+                # Train step
+                loss = self.train_step(optimizer, batch, criterion, accum_count=opt.get('accum_count', 1), step=i, scaler=scaler)
                 total_loss += loss
                 
+                # Print logs
                 if (i + 1) % opt['printevery'] == 0:
                     avg_loss = total_loss / opt['printevery']
                     et = time.time() - s
-                    
-                    if hasattr(optimizer, 'get_last_lr'):
-                        curr_lr = optimizer.get_last_lr()
-                    else:
-                        curr_lr = optimizer._optimizer.param_groups[0]['lr']
-
-                    logging.info('epoch: {:03d} - iter: {:05d} - train loss: {:.4f} - lr: {:.8f} - time: {:.4f}'.format(
-                        epoch, i+1, avg_loss, curr_lr, et))
+                    if hasattr(optimizer, 'get_last_lr'): curr_lr = optimizer.get_last_lr()
+                    else: curr_lr = optimizer._optimizer.param_groups[0]['lr']
+                    logging.info('epoch: {:03d} - iter: {:05d} - train loss: {:.4f} - lr: {:.8f} - time: {:.4f}'.format(epoch, i+1, avg_loss, curr_lr, et))
                     total_loss = 0
                     s = time.time()
             
-            # Update cuối epoch nếu batch lẻ (những mẫu cuối cùng chưa được update)
-            if (i + 1) % accum_count != 0:
+            # Step cuối nếu batch bị lẻ
+            if (i + 1) % opt.get('accum_count', 1) != 0:
                 optimizer.step_and_update_lr()
                 optimizer.zero_grad()
             
-            # ==================================================================
-            # OPTIMIZATION: CLEAR CACHE TRƯỚC KHI VALIDATE
-            # ==================================================================
-            # Giải phóng VRAM không dùng đến để tránh OOM khi vào Validate
-            if 'cuda' in str(opt.get('device', 'cpu')):
-                torch.cuda.empty_cache()
-                # logging.info("Cleared VRAM cache before validation.")
-            # ==================================================================
+            # [CLEANUP 1] Dọn rác sau khi Train xong 1 epoch
+            self.clear_memory(logging, step_name="After-Train")
 
             # --- Validation Phase ---
             s = time.time()
-            valid_loss = self.validate(
-                self.valid_iter, 
-                criterion, 
-                maximum_length=(self.train_max_length, self.train_max_length)
-            )
+            valid_loss = self.validate(self.valid_iter, criterion, maximum_length=(self.train_max_length, self.train_max_length))
             
-            # --- Saving Logic ---
+            # [CLEANUP 2] Dọn rác sau khi Validate Loss (chưa tính BLEU)
+            self.clear_memory(logging, step_name="After-ValidLoss")
+
+            # --- Saving & BLEU Logic ---
             if (epoch+1) % opt['save_checkpoint_epochs'] == 0 and model_dir is not None:
                 valid_src_lang, valid_trg_lang = self.loader.language_tuple
+                
+                # Tính BLEU (Tốn RAM nhất)
                 bleuscore = bleu_batch_iter(self, self.valid_iter, src_lang=valid_src_lang, trg_lang=valid_trg_lang)
+                
+                # [CLEANUP 3] Dọn rác ngay lập tức sau khi tính BLEU
+                self.clear_memory(logging, step_name="After-BLEU-Calc")
 
                 saver.save_and_clear_model(model, model_dir, checkpoint_idx=epoch+1, maximum_saved_model=opt.get('maximum_saved_model_train', const.DEFAULT_NUM_KEEP_MODEL_TRAIN))
                 best_model_score = saver.save_model_best_to_path(model, model_dir, best_model_score, bleuscore, maximum_saved_model=opt.get('maximum_saved_model_eval', const.DEFAULT_NUM_KEEP_MODEL_TRAIN))
@@ -351,9 +406,8 @@ class Transformer(nn.Module):
             else:
                 logging.info('epoch: {:03d} - valid loss: {:.4f} - time: {:.4f}'.format(epoch, valid_loss, time.time() - s))
 
-            # CHECK EARLY STOPPING
+            # Check Early Stopping
             early_stopping(valid_loss, logging)
-            
             if early_stopping.early_stop:
                 logging.info("Early stopping triggered! Training stopped.")
                 saver.save_model_name(type(self).__name__, model_dir)
@@ -375,10 +429,8 @@ class Transformer(nn.Module):
         print("Writing results to {} ...".format(predictions_file))
         with io.open(predictions_file, "w", encoding="utf-8") as write_file:
             write_file.write(results)
-
         print("All done!")
 
-    
     def encode(self, *args, **kwargs):
         return self.encoder(*args, **kwargs)
 

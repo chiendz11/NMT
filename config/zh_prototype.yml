@@ -1,5 +1,5 @@
 # ==============================================================================
-# CONFIG CỨU TINH CHO 4GB VRAM (ZH-VI)
+# CONFIG TỐI ƯU: ZH-VI (1M CÂU - DATA NGẮN) - 8GB VRAM
 # ==============================================================================
 
 data:
@@ -8,51 +8,53 @@ data:
   src_lang: .bpe.zh
   trg_lang: .bpe.vi
 
-# 1. MODEL ARCHITECTURE (GIẢM NHẸ ĐỂ TIẾT KIỆM BỘ NHỚ)
+# 1. MODEL ARCHITECTURE
 d_model: 512
 n_layers: 6
 heads: 8
-d_ff: 1024            # [QUAN TRỌNG] Giảm từ 2048 xuống 1024. 
-                      # Tiết kiệm ~30% VRAM mà ít ảnh hưởng chất lượng với câu ngắn.
-dropout: 0.1          # Data lớn (10M câu) -> Giảm dropout
+d_ff: 2048
+dropout: 0.2          # Giữ 0.2 để chống học vẹt (vì câu ngắn dễ bị học thuộc lòng).
 
-# 2. TRAINING CONFIG
-# Chiến thuật: Batch nhỏ + Tích lũy lớn
-batch_size: 32        # Với len 40, 4GB chịu được khoảng 32-40 câu. Để 32 cho an toàn.
-accum_count: 16       # 32 * 16 = 512 (Effective Batch Size chuẩn)
-eval_batch_size: 8   # Bằng train cho an toàn
+# 2. TRAINING CONFIG (TĂNG TỐC)
+# Vì câu trung bình chỉ dài 10 tokens, 8GB VRAM dư sức gánh Batch 32 hoặc 48.
+# Ta chọn 32 để vừa nhanh gấp đôi phương án cũ, vừa cực kỳ an toàn.
+batch_size: 16        # [TĂNG TỪ 16 -> 32] Tận dụng GPU tốt hơn.
+accum_count: 32       # [GIẢM TỪ 32 -> 16] 
+                      # Công thức: 32 (batch) * 16 (accum) = 512 (Chuẩn vàng).
 
-# 3. OPTIMIZER
+# 3. VALIDATION
+eval_batch_size: 8   # Tăng lên 32 luôn, validate cho nhanh.
+
+# 4. OPTIMIZER
 optimizer: Adam
 optimizer_params:
   betas: [0.9, 0.98]
   eps: !!float 1e-9
 
 lr: 2.0
-n_warmup_steps: 8000
+n_warmup_steps: 4000
 label_smoothing: 0.1
 
-# 4. QUẢN LÝ ĐỘ DÀI (CHÌA KHÓA SỐ 2)
-# Thống kê: 99% < 34 tokens.
-# Set 40 là đủ bao phủ 99.5% dữ liệu rồi. Đừng tham 50.
-train_max_length: 40  
-input_max_length: 40
-max_length: 50        # Inference cho phép dài hơn chút
+# 5. QUẢN LÝ ĐỘ DÀI (QUAN TRỌNG)
+# 99% dữ liệu < 34 tokens. Set 50 là bao trọn vẹn, không sợ mất thông tin.
+train_max_length: 50  
+input_max_length: 50
+max_length: 60        # Inference cho phép dài hơn xíu (để cover 6 câu ngoại lệ kia).
 
-# 5. LOG & SAVE
-epochs: 10            # 10M câu chỉ cần chạy ít epoch
-printevery: 500       # In thường xuyên hơn chút để check xem có bị crash không
+# 6. LOG & SAVE
+epochs: 30            # Với data ngắn, mỗi epoch chạy rất nhanh.
+printevery: 500       
 save_checkpoint_epochs: 1
-maximum_saved_model_eval: 3
-maximum_saved_model_train: 1
-patience: 3
+maximum_saved_model_eval: 5
+maximum_saved_model_train: 5
+patience: 5
 
-# 6. KHÁC
-log_file_models: 'model_zh_vi_4gb.log'
+# 7. KHÁC
+log_file_models: 'model_zh_vi_1m_optimized.log'
 device: cuda
 seed: 42
 
-# 7. INFERENCE
+# 8. INFERENCE
 decode_strategy: BeamSearch
 decode_strategy_kwargs:
   beam_size: 4

@@ -1,20 +1,30 @@
 import torch
 
 class ScheduledOptim():
-    '''A simple wrapper class for learning rate scheduling'''
+    '''A simple wrapper class for learning rate scheduling with FP16 support'''
 
-    def __init__(self, optimizer, init_lr, d_model, n_warmup_steps):
+    # [CHANGE 1] Thêm tham số scaler vào init
+    def __init__(self, optimizer, init_lr, d_model, n_warmup_steps, scaler=None):
         self._optimizer = optimizer
         self.init_lr = init_lr
         self.d_model = d_model
         self.n_warmup_steps = n_warmup_steps
         self.n_steps = 0
-        self._current_lr = 0.0 # [NEW] Lưu trữ LR hiện tại
+        self._current_lr = 0.0 
+        self.scaler = scaler # [NEW] Lưu scaler
 
     def step_and_update_lr(self):
         "Step with the inner optimizer"
         self._update_learning_rate()
-        self._optimizer.step()
+        
+        # [CHANGE 2] Logic update trọng số khác nhau giữa thường và FP16
+        if self.scaler is not None:
+            # Dùng scaler để unscale gradients và update
+            self.scaler.step(self._optimizer)
+            self.scaler.update()
+        else:
+            # Chạy bình thường nếu không có scaler
+            self._optimizer.step()
 
     def zero_grad(self):
         "Zero out the gradients with the inner optimizer"
@@ -25,7 +35,6 @@ class ScheduledOptim():
         n_steps, n_warmup_steps = self.n_steps, self.n_warmup_steps
         return (d_model ** -0.5) * min(n_steps ** (-0.5), n_steps * n_warmup_steps ** (-1.5))
 
-    # [NEW] Hàm lấy LR hiện tại để in ra Log
     def get_last_lr(self):
         return self._current_lr
 
@@ -50,7 +59,7 @@ class ScheduledOptim():
         ''' Learning rate scheduling per step '''
         self.n_steps += 1
         lr = self.init_lr * self._get_lr_scale()
-        self._current_lr = lr # [NEW] Cập nhật biến theo dõi
+        self._current_lr = lr 
 
         for param_group in self._optimizer.param_groups:
             param_group['lr'] = lr
