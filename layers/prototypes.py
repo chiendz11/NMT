@@ -18,15 +18,17 @@ class PositionalEncoder(nn.Module):
         
         for pos in range(max_seq_length):
             for i in range(0, d_model, 2):
-                pe[pos, i] = math.sin(pos/(10000**(2*i/d_model)))
-                pe[pos, i+1] = math.cos(pos/(10000**((2*i+1)/d_model)))
+                div_term = math.exp(i * -(math.log(10000.0) / d_model))
+                pe[pos, i] = math.sin(pos * div_term)
+                pe[pos, i+1] = math.cos(pos * div_term)
+                
         pe = pe.unsqueeze(0)        
         self.register_buffer('pe', pe)
 
     def forward(self, x):
         # [FIX] Kiểm tra độ dài và cắt nếu input dài hơn max_seq_length
         if(x.size(1) > self._max_seq_length):
-            # logging.warning("Input longer than maximum supported length for PE detected. Trimming input.")
+            # logging.warning(f"Input length {x.size(1)} > max {self._max_seq_length}. Trimming.")
             x = x[:, :self._max_seq_length]
         
         x = x * math.sqrt(self.d_model)
@@ -64,7 +66,10 @@ class MultiHeadAttention(nn.Module):
         v = v.transpose(1, 2)
         
         value, attn = self.attention(q, k, v, mask, self.dropout)
+        
+        # Sửa lỗi contiguous để tránh warning hoặc lỗi view
         concat = value.transpose(1, 2).contiguous().view(bs, -1, self.d_model)
+        
         output = self.out(concat)
         return output, attn
 
@@ -90,7 +95,11 @@ class MultiHeadAttention(nn.Module):
             # ------------------------------------------------------
 
             mask = mask.unsqueeze(1) # add a dimension to account for head
-            scores = scores.masked_fill(mask==0, -1e9)
+            
+            # [CRITICAL FIX FOR FP16]
+            # Thay đổi từ -1e9 thành -1e4 (-10000).
+            # Giá trị này đủ nhỏ để Softmax ra 0, nhưng nằm trong vùng an toàn của FP16 (-65504).
+            scores = scores.masked_fill(mask==0, -1e4)
             
         scores = functional.softmax(scores, dim=-1)
         
@@ -104,6 +113,7 @@ class Norm(nn.Module):
     def __init__(self, d_model, eps = 1e-6):
         super().__init__()
         self.size = d_model
+        # Tạo parameters
         self.alpha = nn.Parameter(torch.ones(self.size))
         self.bias = nn.Parameter(torch.zeros(self.size))
         self.eps = eps

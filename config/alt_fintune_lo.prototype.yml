@@ -28,7 +28,7 @@ dropout: 0.3      # Giữ 0.3 là hợp lý cho dataset nhỏ như ALT để tr�
 # Chiến thuật: Giảm Batch Size vật lý xuống cực thấp, tăng tích lũy.
 
 batch_size: 4     # [HẠ XUỐNG] Để an toàn tuyệt đối cho VRAM 4GB
-accum_count: 8    # [TĂNG LÊN] 4 * 8 = 32 (Effective Batch Size). 
+accum_count: 32    # [TĂNG LÊN] 4 * 8 = 32 (Effective Batch Size). 
                   # Fine-tune cần batch size vừa phải (32-64) để hội tụ tốt hơn là 128.
 eval_batch_size: 4 # Valid cũng cần nhẹ nhàng
 
@@ -48,9 +48,9 @@ label_smoothing: 0.1
 
 # 4. QUẢN LÝ ĐỘ DÀI
 # ALT câu thường ngắn hơn VLSP, giảm xuống để tiết kiệm VRAM
-train_max_length: 100 
-input_max_length: 100
-max_length: 100
+train_max_length: 130 
+input_max_length: 130
+max_length: 130
 
 # 5. QUẢN LÝ LOG & SAVE
 epochs: 30        # ALT nhỏ nên hội tụ nhanh, tầm 20-30 epoch là đủ
