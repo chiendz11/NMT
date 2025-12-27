@@ -1,0 +1,83 @@
+# ==============================================================================
+# CONFIG FINETUNE: ZH-VI (PRETRAIN 1M -> FINETUNE)
+# (OPTIMIZED FOR 8GB VRAM)
+# ==============================================================================
+
+# 1. LOAD PRETRAIN (BẮT BUỘC)
+# Đường dẫn tới file model tốt nhất sinh ra từ cấu hình Pretrain của bạn
+# (Dựa trên log file bạn cung cấp: model_zh_vi_1m_optimized.log)
+load_model: 'models/zh_transformer/best_model_0.pkl'
+
+# 2. DATASET
+data:
+  # Trỏ vào thư mục chứa dữ liệu Finetune (ít nhưng chất)
+  train_data_location: data/ALT_Chinese/02_final_separate/train
+  eval_data_location: data/ALT_Chinese/02_final_separate/dev
+
+  # [LƯU Ý QUAN TRỌNG]
+  # Phải COPY 2 file 'vocab.bpe.zh.pkl' và 'vocab.bpe.vi.pkl'
+  # từ thư mục PRETRAIN (data/Zh/02_final_ready/train)
+  # sang thư mục FINETUNE (data/Zh/03_finetune/train)
+  src_lang: .bpe.zh
+  trg_lang: .bpe.vi
+
+# 3. MODEL ARCHITECTURE (GIỮ NGUYÊN 100% TỪ PRETRAIN)
+d_model: 512
+n_layers: 6
+heads: 8
+d_ff: 2048
+dropout: 0.3          # [TĂNG TỪ 0.2 -> 0.3]
+                      # Data Finetune ít hơn 1M câu, tăng dropout để tránh học vẹt.
+
+# 4. TRAINING CONFIG (CHIẾN THUẬT 8GB VRAM)
+# --------------------------------------------------------------------------
+# Mục tiêu: Effective Batch Size = 128 (Chuẩn cho Finetune)
+
+batch_size: 16        # [GIỮ NGUYÊN]
+                      # 8GB VRAM chạy batch 16 với độ dài 100 token là AN TOÀN.
+
+accum_count: 8        # [GIẢM TỪ 32 -> 8]
+                      # Pretrain dùng accum 32 (Total 512) để đi nhanh.
+                      # Finetune dùng accum 8 (Total 128) để đi cẩn thận, chính xác.
+
+eval_batch_size: 8   # Validate nhanh gọn.
+
+# 5. OPTIMIZER
+optimizer: Adam
+optimizer_params:
+  betas: [0.9, 0.98]
+  eps: !!float 1e-9
+
+lr: 0.2               # [GIẢM MẠNH TỪ 2.0 -> 0.2]
+                      # Đây là chìa khóa của Finetune. Học chậm để bảo toàn kiến thức.
+
+n_warmup_steps: 200   # [GIẢM TỪ 4000 -> 200]
+                      # Model đã thông minh rồi, chỉ cần khởi động nhẹ.
+label_smoothing: 0.1
+
+# 6. QUẢN LÝ ĐỘ DÀI (NỚI LỎNG)
+# Pretrain bạn set 50 vì data ngắn. Finetune thường có câu dài hơn.
+train_max_length: 130 # [TĂNG TỪ 50 -> 100]
+                      # 8GB VRAM gánh tốt 100 token. Đừng để 50, sẽ bị cắt mất đuôi câu.
+input_max_length: 130
+max_length: 150       # Inference cho phép dài hơn chút.
+
+# 7. LOG & SAVE
+epochs: 30            # Finetune hội tụ nhanh.
+printevery: 50        # In log dày hơn (50 step/lần) để soi Loss.
+save_checkpoint_epochs: 1
+maximum_saved_model_eval: 5
+maximum_saved_model_train: 5
+patience: 5
+
+# 8. KHÁC
+log_file_models: 'model_zh_vi_finetune.log'
+device: cuda
+seed: 42
+fp16: True            # [BẬT] Luôn bật trên 8GB để tối ưu bộ nhớ.
+
+# 9. INFERENCE
+decode_strategy: BeamSearch
+decode_strategy_kwargs:
+  beam_size: 5        # Tăng nhẹ beam size để dịch nuột hơn.
+  length_normalize: 0.6

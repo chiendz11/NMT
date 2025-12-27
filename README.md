@@ -1,156 +1,49 @@
-Dự án MultilingualMT-UET-KC4.1 được fork từ MultilingualMT-UET-KC4.0 và được tiếp tục phát triển bởi Bùi Anh Chiến
+BAO CAO DO AN: FINE-TUNING TRANSFORMER CHO NGON NGU IT TAI NGUYEN (ALT DATASET)
+GIOI THIEU CHUNG Du an duoc tiep tuc phat trien boi Bui Anh Chien, dua tren cong cu MultilingualMT-UET-KC4.1 (fork tu phien ban 4.0). Muc tieu chinh la toi uu hoa hieu suat dich may cho cac cap ngon ngu Khmer-Viet va Lao-Viet bang phuong phap Transfer Learning (Fine-tuning).
 
-# Setup
-## Cài đặt công cụ Multilingual-NMT
+CAI DAT MOI TRUONG
 
-**Note**:
-Lưu ý:
-Phiên bản hiện tại chỉ tương thích với python>=3.6
-```bash
-git clone https://github.com/KCDichDaNgu/KC4.0_MultilingualNMT.git
-cd KC4.0_MultilingualNMT
-pip install -r requirements.txt
+Yeu cau: Python >= 3.6
 
-# Quickstart
+Thu vien: pip install -r requirements.txt
 
-```
+Tap lenh cai dat: git clone https://github.com/KCDichDaNgu/KC4.0_MultilingualNMT.git cd KC4.0_MultilingualNMT pip install -r requirements.txt
 
-## Bước 1: Chuẩn bị dữ liệu
+CHUAN BI DU LIEU Su dung tap du lieu ALT (Asian Language Treebank). Du lieu da duoc xu ly BPE (Byte Pair Encoding).
 
-Ví dụ thực nghiệm dựa trên cặp dữ liệu Anh-Việt nguồn từ iwslt với 133k cặp câu:
+Du lieu nguon (Source): .lo (Lao), .km (Khmer), .zh (Trung)
 
-```bash
-cd data/iwslt_en_vi
-```
+Du lieu dich (Target): .vi (Viet)
 
-Dữ liệu bao gồm câu nguồn (`src`) và câu đích (`tgt`) dữ liệu đã được tách từ:
+HUONG DAN CHAY MO HINH
 
-* `train.en`
-* `train.vi`
-* `tst2012.en`
-* `tst2012.vi`
+4.1. Huan luyen (Training/Fine-tuning) Su dung ky thuat Fine-tuning tu mo hinh Pre-trained de toi uu cho ngon ngu it tai nguyen tren GPU han che (4GB-8GB VRAM).
 
-| Data set    | Sentences  |                    Download                   |
-| :---------: | :--------: | :-------------------------------------------: |
-| Training    | 133,317    | via GitHub or located in data/train-en-vi.tgz |
-| Development | 1,553      | via GitHub or located in data/train-en-vi.tgz |
-| Test        | 1,268      | via GitHub or located in data/train-en-vi.tgz |
+Lenh huan luyen mau (Cap Khmer - Viet): python -m bin.main train --model Transformer --model_dir ./models/alt_km_finetune_transformer --config ./config/alt_finetune_km_prototype.yml
 
+4.2. Dich (Inference) Lenh dich mau (Cap Lao - Viet): python -m bin.main infer --model Transformer --model_dir ./models/alt_lo_transformer_fineTune/ --features_file ./data/ALT_Laos/test.bpe.lo --predictions_file data/predictions/predictions_lo2vi_transformer_fineTune_alt
 
-**Note**:
-Lưu ý:
-- Dữ liệu trước khi đưa vào huấn luyện cần phải được tokenize. 
-- $CONFIG là đường dẫn tới vị trí chứa file config
+4.3. Danh gia (Evaluation) Su dung multi-bleu.perl de tinh diem BLEU: perl third-party/multi-bleu.perl ./data/ALT_Laos/test.bpe.vi < ./data/predictions/predictions_lo2vi_transformer_alt
 
-Tách dữ liệu dev để tính toán hội tụ trong quá trình huấn luyện, thường không lớn hơn 5k câu.
+KET QUA THUC NGHIEM (DIEM BLEU)
 
-```text
-$ head -n 5 data/iwslt_en_vi/train.en
-Rachel Pike : The science behind a climate headline
-In 4 minutes , atmospheric chemist Rachel Pike provides a glimpse of the massive scientific effort behind the bold headlines on climate change , with her team -- one of thousands who contributed -- taking a risky flight over the rainforest in pursuit of data on a key molecule .
-I &apos;d like to talk to you today about the scale of the scientific effort that goes into making the headlines you see in the paper .
-Headlines that look like this when they have to do with climate change , and headlines that look like this when they have to do with air quality or smog .
-They are both two branches of the same field of atmospheric science .
-```
+Cap ngon ngu | Baseline (Scratch) | Fine-tuning (Pre-train) | +/-
+Zh -> Vi | 18.91 | 22.06 | +3.15 Km -> Vi | 24.42 | 26.46 | +2.04 Lo -> Vi | 18.41 | 22.07 | +3.36
+TONG KET & HUONG PHAT TRIEN
 
-## Bước 2: Huấn luyện mô hình
+Dong gop: Huan luyen thanh cong Transformer sau tren GPU han che. Chung minh duoc hieu qua manh me cua Transfer Learning cho ngon ngu it tai nguyen.
 
-Để huấn luyện một mô hình mới **hãy chỉnh sửa file YAML config**:
-Cần phải sửa lại file config en_vi.yml chỉnh siêu tham số và đường dẫn tới dữ liệu huấn luyện:
+Han che: Du lieu con nhieu va kho khan voi thuat ngu chuyen nganh sau.
 
-```yaml
-# data location and config section
-data:
-  train_data_location: data/iwslt_en_vi/train
-  eval_data_location:  data/iwslt_en_vi/tst2013
-  src_lang: .en 
-  trg_lang: .vi 
-log_file_models: 'model.log'
-lowercase: false
-build_vocab_kwargs: # additional arguments for build_vocab. See torchtext.vocab.Vocab for mode details
-#  max_size: 50000
-  min_freq: 5
-# model parameters section
-device: cuda
-d_model: 512
-n_layers: 6
-heads: 8
-# inference section
-eval_batch_size: 8
-decode_strategy: BeamSearch
-decode_strategy_kwargs:
-  beam_size: 5 # beam search size
-  length_normalize: 0.6 # recalculate beam position by length. Currently only work in default BeamSearch
-  replace_unk: # tuple of layer/head attention to replace unknown words
-    - 0 # layer
-    - 0 # head
-input_max_length: 200 # input longer than this value will be trimmed in inference. Note that this values are to be used during cached PE, hence, validation set with more than this much tokens will call a warning for the trimming.
-max_length: 160 # only perform up to this much timestep during inference
-train_max_length: 50 # training samples with this much length in src/trg will be discarded
-# optimizer and learning arguments section
-lr: 0.2
-optimizer: AdaBelief
-optimizer_params:
-  betas:
-    - 0.9 # beta1
-    - 0.98 # beta2
-  eps: !!float 1e-9
-n_warmup_steps: 4000
-label_smoothing: 0.1
-dropout: 0.1
-# training config, evaluation, save & load section
-batch_size: 64
-epochs: 20
-printevery: 200
-save_checkpoint_epochs: 1
-maximum_saved_model_eval: 5
-maximum_saved_model_train: 5
+Huong tuong lai: Ap dung Back-translation quy mo lon, xay dung mo hinh da ngon ngu (Multilingual) va luong tu hoa (Quantization) de trien khai.
 
-```
+THONG TIN PHU
 
-Sau đó có thể chạy với câu lệnh:
-
-```bash
-python -m bin.main train --model Transformer --model_dir $MODEL/en-vi.model --config $CONFIG/en_vi.yml
-```
-
-**Note**:
-Ở đây:
-- $MODEL là dường dẫn tới vị trí lưu mô hình. Sau khi huấn luyện mô hình, thư mục chứa mô hình bao gồm mô hình huyến luyện, file config, file log, vocab.
-- $CONFIG là đường dẫn tới vị trí chứa file config
-
-## Bước 3: Dịch 
-
-Mô hình dịch dựa trên thuật toán beam search và lưu bản dịch tại `$your_data_path/translate.en2vi.vi`.
-
-```bash
-python -m bin.main infer --model Transformer --model_dir $MODEL/en-vi.model --features_file $your_data_path/tst2012.en --predictions_file $your_data_path/translate.en2vi.vi
-```
-
-## Bước 4: Đánh giá chất lượng dựa trên điểm BLEU
-
-Đánh giá điểm BLEU dựa trên multi-bleu
-
-```bash
-perl thrid-party/multi-bleu.perl $your_data_path/translate.en2vi.vi < $your_data_path/tst2012.vi
-```
-
-|        MODEL       | BLEU (Beam Search) |
-| :-----------------:| :----------------: |
-| Transformer (Base) |        25.64       |
+GitHub Source Code: [\[Link Repository cua ban\]](https://github.com/chiendz11)
 
 
-## Chi tiết tham khảo tại 
-[nmtuet.ddns.net](http://nmtuet.ddns.net:1190/)
+Sinh vien thuc hien: Bui Anh Chien
 
-## Nếu có ý kiến đóng góp, xin hãy gửi thư tới địa chỉ mail kcdichdangu@gmail.com
+Giang vien huong dan: Tran Hong Viet (thviet@vnu.edu.vn)
 
-## Xin trích dẫn bài báo sau:
-```bash
-@inproceedings{ViNMT2022,
-  title = {ViNMT: Neural Machine Translation Toolkit},
-  author = {Nguyen Hoang Quan, Nguyen Thanh Dat, Nguyen Hoang Minh Cong, Nguyen Van Vinh, Ngo Thi Vinh, Nguyen Phuong Thai, Tran Hong Viet},
-  booktitle = {https://arxiv.org/abs/2112.15272},
-  year = {2022},
-}
-```
+GitHub Instructor Invited: thviet79@gmail.com

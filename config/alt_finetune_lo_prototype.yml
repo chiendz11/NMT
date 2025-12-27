@@ -1,0 +1,79 @@
+# ==============================================================================
+# CONFIG FINE-TUNE: VLSP PRE-TRAIN -> ALT DATASET
+# (GPU 4GB VRAM - FP16 MODE)
+# ==============================================================================
+
+# [QUAN TRỌNG] Đường dẫn đến file tốt nhất của đợt train VLSP
+# Lưu ý: Extension trong folder của bạn là .pkl
+load_model: 'models/vlsp2023_lo_transformer/best_model_0.pkl'
+
+# 1. DATASET
+data:
+  # Trỏ về dữ liệu ALT (Lào -> Việt)
+  train_data_location: data/ALT_Lao/02_final_separate/train
+  eval_data_location: data/ALT_Lao/02_final_separate/dev
+  
+  # [CẢNH BÁO - BẮT BUỘC LÀM]
+  # Bạn phải COPY 2 file: 'vocab.bpe.lo.pkl' và 'vocab.bpe.vi.pkl'
+  # Từ thư mục model VLSP -> Dán vào thư mục 'data/ALT_Lao/02_final_separate/train'
+  # Nếu không copy, code sẽ tự tạo vocab mới -> Lệch vocab -> Model ngu đi.
+  src_lang: .bpe.lo
+  trg_lang: .bpe.vi
+
+# 2. MODEL ARCHITECTURE (BẮT BUỘC KHỚP VỚI VLSP)
+# --------------------------------------------------------------------------
+# Giả định VLSP bạn train bằng cấu hình Base. Phải giữ nguyên thông số này.
+d_model: 512      # Giữ nguyên
+n_layers: 6       # Giữ nguyên
+heads: 8          # Giữ nguyên
+d_ff: 2048        # Giữ nguyên
+dropout: 0.3      # Dữ liệu ALT ít, giữ dropout 0.3 để tránh Overfit
+
+# 3. TRAINING CONFIG (CHIẾN THUẬT FINE-TUNE CHO 4GB)
+# --------------------------------------------------------------------------
+batch_size: 4     # [AN TOÀN] 4GB VRAM chỉ chịu được 4 câu của Model Base (512)
+accum_count: 8    # [CHIẾN THUẬT] 
+                  # Effective Batch = 4 * 8 = 32.
+                  # Batch 32 đủ nhỏ để cập nhật gradient liên tục cho dữ liệu mới.
+eval_batch_size: 4
+
+# 4. OPTIMIZER & SCHEDULER
+optimizer: Adam
+optimizer_params:
+  betas: [0.9, 0.98]
+  eps: !!float 1e-9
+
+lr: 0.5           # [GIẢM SÂU] Hạ từ 2.0 xuống 0.5.
+                  # Lý do: Model đã học rồi, chỉ cần tinh chỉnh nhẹ.
+                  # Nếu để LR cao, nó sẽ phá vỡ các trọng số đã học tốt từ VLSP.
+
+n_warmup_steps: 500 # Khởi động cực nhanh (chỉ vài trăm bước) vì không cần train từ đầu.
+label_smoothing: 0.1
+
+# 5. QUẢN LÝ TRAIN
+epochs: 50        # Fine-tune hội tụ rất nhanh. 30 epochs là đủ cho tập ALT nhỏ.
+printevery: 50    # In log mỗi 50 steps
+
+save_checkpoint_epochs: 1 # Lưu mỗi epoch để theo dõi sát sao
+
+maximum_saved_model_eval: 3 # Giữ lại 3 model có BLEU cao nhất
+maximum_saved_model_train: 1 # Chỉ giữ 1 checkpoint train mới nhất để tiết kiệm ổ cứng
+
+# [QUAN TRỌNG] Độ dài câu
+# Model Base rất ngốn RAM. Giới hạn 100-130 token là an toàn nhất cho 4GB.
+train_max_length: 130 
+input_max_length: 130
+max_length: 150   # Khi infer có thể dài hơn xíu
+
+patience: 5       # [EARLY STOP] Nếu 5 epoch mà loss không giảm thì dừng luôn cho đỡ tốn điện.
+
+# 6. KHÁC
+log_file_models: 'model_finetune_alt.log'
+device: cuda
+fp16: True        # [CODE MỚI] Bật chế độ tiết kiệm RAM và tăng tốc độ
+
+# 7. INFERENCE
+decode_strategy: BeamSearch
+decode_strategy_kwargs:
+  beam_size: 5
+  length_normalize: 0.6

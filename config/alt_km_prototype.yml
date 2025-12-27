@@ -1,0 +1,72 @@
+# ==============================================================================
+# FINAL CONFIGURATION - ALT DATASET (16K) - 4GB VRAM SAFE MODE
+# ==============================================================================
+
+# 1. DATASET
+data:
+  train_data_location: data/ALT_Khmer/02_final_separate/train
+  eval_data_location: data/ALT_Khmer/02_final_separate/dev
+  src_lang: .bpe.km
+  trg_lang: .bpe.vi
+
+# 2. MODEL ARCHITECTURE
+# Giữ nguyên cấu trúc nhỏ (Tiny) để phù hợp lượng dữ liệu ít
+d_model: 256
+n_layers: 2
+heads: 4
+d_ff: 1024
+dropout: 0.3     # QUAN TRỌNG: Giữ 0.3 để chống học vẹt (Overfitting)
+
+# 3. TRAINING CONFIG (ĐÃ TỐI ƯU CHO 4GB VRAM)
+# --------------------------------------------------------------------------
+# CHIẾN THUẬT: Tích tiểu thành đại
+# - Vật lý (VRAM): Chỉ nạp 8 câu để không cháy RAM.
+# - Toán học (Logic): Tích lũy 128 lần mới cập nhật trọng số.
+# => Effective Batch Size = 8 * 128 = 1024 câu (Rất đẹp cho Transformer)
+# --------------------------------------------------------------------------
+batch_size: 8         # An toàn cho 4GB VRAM
+accum_count: 128      # Tăng từ 16 lên 128
+
+eval_batch_size: 8
+
+# 4. OPTIMIZER
+optimizer: Adam
+optimizer_params:
+  betas: [0.9, 0.98]
+  eps: !!float 1e-9
+
+lr: 2.0             
+# [QUAN TRỌNG] SỬA WARMUP
+# - Tổng số bước train = 200 epochs * (16000 câu / 1024 batch) ≈ 3200 bước.
+# - Warmup nên chiếm khoảng 10-15% giai đoạn đầu -> Chọn 500 bước.
+# - Nếu để 3000 như cũ, train xong 200 epoch model vẫn đang warmup -> Fail.
+n_warmup_steps: 500 
+label_smoothing: 0.1
+
+# 5. QUẢN LÝ TRAIN
+epochs: 200           # Dữ liệu ít nên cần train nhiều vòng
+printevery: 50        # In log mỗi 50 steps (~ 3 epochs in 1 lần)
+
+# [SỬA] Lưu thưa ra
+save_checkpoint_epochs: 1 # Lưu mỗi 5 epochs (thay vì 1). 
+                          # Lưu nhiều quá tốn ổ cứng và rối mắt.
+
+maximum_saved_model_eval: 5
+maximum_saved_model_train: 5
+train_max_length: 130     # 99% câu tiếng Việt < 114 tokens, 130 là an toàn.
+
+# [THÊM] Early Stopping
+patience: 20              # Nếu 20 epoch (sau khi gộp) mà không khá hơn thì dừng.
+
+# 6. KHÁC
+log_file_models: 'model_lo_alt_4gb.log'
+device: cuda
+lowercase: false
+
+# 7. INFERENCE
+decode_strategy: BeamSearch
+decode_strategy_kwargs:
+  beam_size: 5
+  length_normalize: 0.6
+input_max_length: 130
+max_length: 150
