@@ -1,8 +1,41 @@
+1. Core Deep Learning (PyTorch)
+
+Bạn chọn 2.1.0 là ổn cho các GPU đời mới (RTX 30xx, 40xx)
+
 torch==2.1.0
-nltk
+torchvision
+torchaudio
+
+2. Data Loading (QUAN TRỌNG)
+
+Code NMT cũ thường dùng Field/BucketIterator của bản 0.6.0
+
+Lưu ý: Bản này cũ, nhưng bắt buộc nếu code dùng legacy API.
+
 torchtext==0.6.0
-pyvi
+
+3. Tokenizer & Preprocessing (Cực quan trọng cho dự án ALT)
+
+sentencepiece       # Bắt buộc để chạy BPE (tất cả các file pp_*.py)
+pyvi                # Tách từ tiếng Việt (All files)
+jieba               # Tách từ tiếng Trung (pp_alt_zh.py)
+laonlp              # Tách từ tiếng Lào (pp_alt_lo.py)
+khmer-nltk          # Tách từ tiếng Khmer (pp_alt_km.py)
+
+4. Utilities (Tiện ích)
+
+tqdm                # Thanh tiến trình (Loading bar)
+PyYAML==6.0.1       # Đọc file config .yml (Sửa 6.0.3 thành 6.0.1 vì 6.0.3 hay lỗi build)
+dill                # Lưu object Python (thường dùng cho Field của torchtext)
+numpy               # Tính toán ma trận
+pandas              # Xử lý dữ liệu bảng
+
+5. Evaluation (Đánh giá)
+
+sacrebleu           # Tính điểm BLEU chuẩn quốc tế (Thay cho perl)
+
+6. Các thư viện phụ trợ khác (User liệt kê)
+
+nltk
 spacy
-PyYAML==6.0.3
-dill
-pandas
+six                 # Thư viện tương thích Python 2/3 (thường torchtext cần)

@@ -426,10 +426,18 @@ class Transformer(nn.Module):
         results = "\n".join( self.translate_batch_sentence(inputs, src_lang=src_lang, trg_lang=trg_lang, output_tokens=False, batch_size=batch_size))
         print("Inference done, cost {:.2f} secs.".format(time.time() - start))
 
+        output_dir = os.path.dirname(predictions_file)
+        
+        # 2. Nếu có thư mục cha và nó chưa tồn tại -> Tạo mới
+        if output_dir and not os.path.exists(output_dir):
+            print(f"Creating missing directory: {output_dir}")
+            os.makedirs(output_dir, exist_ok=True)
+            
         print("Writing results to {} ...".format(predictions_file))
         with io.open(predictions_file, "w", encoding="utf-8") as write_file:
             write_file.write(results)
         print("All done!")
+        # --- KẾT THÚC ĐOẠN CODE SỬA ---
 
     def encode(self, *args, **kwargs):
         return self.encoder(*args, **kwargs)
